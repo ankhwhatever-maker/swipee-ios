@@ -212,10 +212,10 @@ struct DuplicateGroupSwipeView: View {
     private var actionControls: some View {
         ZStack {
             HStack(spacing: 32) {
-                actionButton("xmark", color: .swipeeDelete, label: "削除候補へ", decision: .trash) {
+                actionButton("削除", color: .swipeeDelete, decision: .trash) {
                     requestedDecision = .trash
                 }
-                actionButton("checkmark", color: .swipeeKeep, label: "キープ", decision: .keep) {
+                actionButton("キープ", color: .swipeeKeep, decision: .keep) {
                     requestedDecision = .keep
                 }
             }
@@ -274,24 +274,23 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private func actionButton(
-        _ icon: String,
+        _ title: String,
         color: Color,
-        label: String,
         decision: SwipeDecision,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.title2.bold())
-                .frame(width: 58, height: 58)
-                .background(.white.opacity(0.12), in: Circle())
-                .overlay { Circle().stroke(.white.opacity(0.2)) }
+            Text(title)
+                .font(.headline.bold())
+                .frame(width: 86, height: 54)
+                .background(.white.opacity(0.12), in: Capsule())
+                .overlay { Capsule().stroke(.white.opacity(0.2)) }
                 .foregroundStyle(color)
         }
         .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
         .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
         .disabled(processing)
-        .accessibilityLabel(label)
+        .accessibilityLabel(title)
     }
 
     private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {

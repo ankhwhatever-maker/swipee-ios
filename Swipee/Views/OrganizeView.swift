@@ -146,8 +146,8 @@ struct OrganizeView: View {
     private var actionControls: some View {
         ZStack {
             HStack(spacing: 32) {
-                actionButton("xmark", color: .swipeeDelete, label: "削除候補へ", decision: .trash) { requestedDecision = .trash }
-                actionButton("checkmark", color: .swipeeKeep, label: "キープ", decision: .keep) { requestedDecision = .keep }
+                actionButton("削除", color: .swipeeDelete, decision: .trash) { requestedDecision = .trash }
+                actionButton("キープ", color: .swipeeKeep, decision: .keep) { requestedDecision = .keep }
             }
             HStack {
                 undoButton
@@ -172,7 +172,7 @@ struct OrganizeView: View {
 
     private var filterButton: some View {
         Button { showingFilters = true } label: {
-            Image(systemName: "line.3.horizontal.decrease")
+            Image(systemName: "slider.horizontal.3")
                 .font(.headline.bold())
                 .frame(width: 44, height: 44)
                 .background(deckControlBackground, in: Circle())
@@ -202,25 +202,24 @@ struct OrganizeView: View {
     }
 
     private func actionButton(
-        _ icon: String,
+        _ title: String,
         color: Color,
-        label: String,
         decision: SwipeDecision,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.title2.bold())
-                .frame(width: 58, height: 58)
-                .background(deckControlBackground, in: Circle())
-                .overlay { Circle().stroke(deckControlBorder) }
+            Text(title)
+                .font(.headline.bold())
+                .frame(width: 86, height: 54)
+                .background(deckControlBackground, in: Capsule())
+                .overlay { Capsule().stroke(deckControlBorder) }
                 .foregroundStyle(color)
                 .shadow(color: .black.opacity(!isDeckVisible && colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
         }
         .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
         .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
         .disabled(processing)
-        .accessibilityLabel(label)
+        .accessibilityLabel(title)
     }
 
     private var emptyState: some View {
