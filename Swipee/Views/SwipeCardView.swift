@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Photos
 import SwiftUI
 
@@ -24,6 +25,8 @@ struct SwipeCardView: View {
     @State private var shareRequestID: PHImageRequestID?
     @State private var shareRequestGeneration = 0
     @State private var sharePayload: PhotoSharePayload?
+    @State private var videoPlayer = AVPlayer()
+    @State private var isVideoMuted = true
 
     var body: some View {
         interactiveArea
@@ -90,7 +93,14 @@ struct SwipeCardView: View {
                     }
                 }
                 .padding(.trailing, 4)
-                .padding(.bottom, 120)
+                .padding(.bottom, 184)
+            }
+
+            if asset.mediaType == .video, showsSideActions {
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    videoTransportControls(refreshDate: context.date)
+                }
+                .transition(.opacity)
             }
         }
             .contentShape(Rectangle())
@@ -129,6 +139,20 @@ struct SwipeCardView: View {
             }
             .disabled(isPreparingShare)
             .accessibilityLabel("写真を共有")
+
+            Rectangle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 26, height: 1)
+                .padding(.vertical, 7)
+                .accessibilityHidden(true)
+
+            Button { } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("詳細と編集")
+            .accessibilityHint("準備中")
         }
         .foregroundStyle(.white)
         .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
@@ -136,6 +160,136 @@ struct SwipeCardView: View {
 
     private var isFavorite: Bool {
         favoriteOverride ?? asset.isFavorite
+    }
+
+    private var videoPlaybackButton: some View {
+        Button { toggleVideoPlayback() } label: {
+            Image(systemName: videoPlayer.timeControlStatus == .playing ? "pause.fill" : "play.fill")
+                .font(.system(size: 21, weight: .semibold))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
+        .accessibilityLabel(videoPlayer.timeControlStatus == .playing ? "一時停止" : "再生")
+    }
+
+    private var videoMuteButton: some View {
+        Button { toggleVideoMute() } label: {
+            Image(systemName: isVideoMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
+        .accessibilityLabel(isVideoMuted ? "音声をオン" : "ミュート")
+    }
+
+    private func videoTransportControls(refreshDate: Date) -> some View {
+        let elapsed = videoElapsedTime
+
+        return VStack(spacing: 6) {
+            Spacer()
+
+            HStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    videoPlaybackButton
+                    Text(formattedVideoTime(elapsed))
+                }
+                Spacer()
+                VStack(spacing: 0) {
+                    videoMuteButton
+                    Text("−\(formattedVideoTime(max(videoDuration - elapsed, 0)))")
+                }
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.78))
+            .padding(.horizontal, 4)
+
+            videoSeekBar(refreshDate: refreshDate)
+        }
+    }
+
+    private func videoSeekBar(refreshDate: Date) -> some View {
+        let progress = videoPlaybackProgress
+
+        return GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(.white.opacity(0.22))
+                Rectangle()
+                    .fill(.white)
+                    .frame(width: proxy.size.width * progress)
+                    .id(refreshDate.timeIntervalSinceReferenceDate)
+            }
+            .contentShape(Rectangle().inset(by: -10))
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        seekVideo(to: value.location.x, width: proxy.size.width)
+                    }
+            )
+        }
+        .frame(width: maximumSize.width + 20, height: 4)
+        .accessibilityLabel("再生位置")
+        .accessibilityValue("\(Int(progress * 100))パーセント")
+        .accessibilityAdjustableAction { direction in
+            let adjustment: TimeInterval = direction == .increment ? 5 : -5
+            seekVideo(to: videoElapsedTime + adjustment)
+        }
+    }
+
+    private var videoDuration: TimeInterval {
+        max(asset.duration, 0)
+    }
+
+    private var videoElapsedTime: TimeInterval {
+        let seconds = videoPlayer.currentTime().seconds
+        return seconds.isFinite ? min(max(seconds, 0), videoDuration) : 0
+    }
+
+    private var videoPlaybackProgress: CGFloat {
+        guard videoDuration > 0 else { return 0 }
+        return CGFloat(min(max(videoElapsedTime / videoDuration, 0), 1))
+    }
+
+    private func formattedVideoTime(_ interval: TimeInterval) -> String {
+        let seconds = max(Int(interval.rounded(.down)), 0)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func seekVideo(to horizontalPosition: CGFloat, width: CGFloat) {
+        guard width > 0, videoDuration > 0 else { return }
+        let progress = min(max(horizontalPosition / width, 0), 1)
+        seekVideo(to: videoDuration * progress)
+    }
+
+    private func seekVideo(to seconds: TimeInterval) {
+        guard videoDuration > 0 else { return }
+        let destination = min(max(seconds, 0), videoDuration)
+        videoPlayer.seek(
+            to: CMTime(seconds: destination, preferredTimescale: 600),
+            toleranceBefore: CMTime(seconds: 0.05, preferredTimescale: 600),
+            toleranceAfter: CMTime(seconds: 0.05, preferredTimescale: 600)
+        )
+    }
+
+    private func toggleVideoPlayback() {
+        if videoPlayer.timeControlStatus == .playing {
+            videoPlayer.pause()
+        } else {
+            let duration = max(asset.duration, 0)
+            let elapsed = videoPlayer.currentTime().seconds
+            if elapsed.isFinite, duration - elapsed < 0.1 {
+                videoPlayer.seek(to: .zero)
+            }
+            videoPlayer.play()
+        }
+    }
+
+    private func toggleVideoMute() {
+        isVideoMuted.toggle()
+        videoPlayer.isMuted = isVideoMuted
     }
 
     private func toggleFavorite() {
@@ -201,7 +355,8 @@ struct SwipeCardView: View {
                 manager: manager,
                 allowsNetworkAccess: allowsNetworkAccess,
                 playbackEnabled: isInteractive && !isDragging && !isExiting && !showingMetadata,
-                showsControls: showsSideActions
+                player: videoPlayer,
+                isMuted: $isVideoMuted
             )
         } else if asset.mediaSubtypes.contains(.photoLive) {
             LivePhotoAssetView(

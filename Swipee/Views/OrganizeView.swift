@@ -52,7 +52,13 @@ struct OrganizeView: View {
             content.padding(.horizontal, 10).padding(.bottom, 6)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .topTrailing) { filterButton }
+        .overlay(alignment: .topTrailing) {
+            if !isDeckVisible {
+                filterButton
+                    .padding(.top, 8)
+                    .padding(.trailing, 14)
+            }
+        }
         .sheet(isPresented: $showingFilters) { NavigationStack { PhotoFilterView() } }
         .fullScreenCover(isPresented: $showingSessionReview, onDismiss: {
             Task { await reload() }
@@ -77,25 +83,32 @@ struct OrganizeView: View {
     }
 
     private var deck: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             if library.authorizationStatus == .limited {
                 Label("選択した写真のみ表示しています", systemImage: "photo.badge.checkmark")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
+                    .padding(.bottom, 6)
             }
+
+            deckHeader
+
             GeometryReader { proxy in
                 ZStack {
                     if let asset = library.candidates.first {
                         let restoration = restoringCard?.asset.localIdentifier == asset.localIdentifier
                             ? restoringCard
                             : nil
+                        let restoreOffset = restoration.map {
+                            restorationOffset(for: $0.decision, in: proxy.size)
+                        } ?? CGSize.zero
                         SwipeCardView(
                             asset: asset,
                             manager: library.imageManager,
                             isInteractive: !processing && restoration == nil,
                             allowsNetworkAccess: true,
                             maximumSize: proxy.size,
-                            metadataBottomInset: actionOverlayHeight,
+                            metadataBottomInset: 0,
                             requestedDecision: $requestedDecision,
                             activeSwipeDecision: $activeSwipeDecision
                         ) { isFavorite in
@@ -104,7 +117,7 @@ struct OrganizeView: View {
                             await decide($0, asset: asset)
                         }
                         .id(asset.localIdentifier)
-                        .offset(restoration.map { restorationOffset(for: $0.decision, in: proxy.size) } ?? .zero)
+                        .offset(restoreOffset)
                         .rotationEffect(restoration.map { restorationRotation(for: $0.decision) } ?? .zero)
                         .opacity(restoration != nil && reduceMotion ? restorationProgress : 1)
                         .accessibilityHidden(restoration != nil)
@@ -112,9 +125,22 @@ struct OrganizeView: View {
                     }
                 }
             }
-            .overlay(alignment: .top) { progressPill.padding(.top, 12) }
-            .overlay(alignment: .bottom) { actionControls.padding(.vertical, 4) }
+
+            actionControls
+                .frame(height: actionOverlayHeight)
         }
+    }
+
+    private var deckHeader: some View {
+        ZStack {
+            progressPill
+            HStack {
+                Spacer()
+                filterButton
+            }
+        }
+        .frame(height: 58)
+        .padding(.horizontal, 4)
     }
 
     private var actionControls: some View {
@@ -154,8 +180,6 @@ struct OrganizeView: View {
         }
         .foregroundStyle(isDeckVisible ? Color.white : Color.primary)
         .accessibilityLabel("表示する写真")
-        .padding(.top, 8)
-        .padding(.trailing, 14)
     }
 
     private var undoButton: some View {
