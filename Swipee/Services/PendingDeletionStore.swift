@@ -6,23 +6,27 @@ final class PendingDeletionStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let key = "pendingDeletions.v1"
+    private var identifierSet: Set<String>
 
     var assetIdentifiers: Set<String> {
-        Set(records.map(\.assetIdentifier))
+        identifierSet
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let loadedRecords: [PendingDeletionRecord]
         if let data = defaults.data(forKey: key),
            let decoded = try? JSONDecoder().decode([PendingDeletionRecord].self, from: data) {
-            records = decoded
+            loadedRecords = decoded
         } else {
-            records = []
+            loadedRecords = []
         }
+        records = loadedRecords
+        identifierSet = Set(loadedRecords.map(\.assetIdentifier))
     }
 
     func contains(assetIdentifier: String) -> Bool {
-        records.contains { $0.assetIdentifier == assetIdentifier }
+        identifierSet.contains(assetIdentifier)
     }
 
     @discardableResult
@@ -40,6 +44,7 @@ final class PendingDeletionStore: ObservableObject {
             queuedAt: queuedAt
         )
         records.append(record)
+        identifierSet.insert(assetIdentifier)
         persist()
         return record
     }
@@ -50,6 +55,7 @@ final class PendingDeletionStore: ObservableObject {
             return nil
         }
         let record = records.remove(at: index)
+        identifierSet.remove(assetIdentifier)
         persist()
         return record
     }
@@ -57,6 +63,7 @@ final class PendingDeletionStore: ObservableObject {
     func removeAll() {
         guard !records.isEmpty else { return }
         records.removeAll()
+        identifierSet.removeAll()
         persist()
     }
 
@@ -64,7 +71,10 @@ final class PendingDeletionStore: ObservableObject {
         guard !assetIdentifiers.isEmpty else { return }
         let previousCount = records.count
         records.removeAll { assetIdentifiers.contains($0.assetIdentifier) }
-        if records.count != previousCount { persist() }
+        if records.count != previousCount {
+            identifierSet.subtract(assetIdentifiers)
+            persist()
+        }
     }
 
     @discardableResult
@@ -72,6 +82,7 @@ final class PendingDeletionStore: ObservableObject {
         let removed = records.filter { !validAssetIdentifiers.contains($0.assetIdentifier) }
         guard !removed.isEmpty else { return [] }
         records.removeAll { !validAssetIdentifiers.contains($0.assetIdentifier) }
+        identifierSet.formIntersection(validAssetIdentifiers)
         persist()
         return removed
     }

@@ -1,4 +1,4 @@
-import Photos
+@preconcurrency import Photos
 import UIKit
 
 @MainActor
@@ -10,6 +10,8 @@ final class PhotoLibraryService: ObservableObject {
 
     let imageManager = PHCachingImageManager()
     private var cachedAssets: [PHAsset] = []
+    private var reloadGeneration = 0
+    private let deckCacheTargetSize = CGSize(width: 900, height: 1200)
 
     var canReadLibrary: Bool { authorizationStatus == .authorized || authorizationStatus == .limited }
 
@@ -27,10 +29,18 @@ final class PhotoLibraryService: ObservableObject {
         history: ReviewHistoryStore,
         pendingDeletions: PendingDeletionStore
     ) async {
+        reloadGeneration &+= 1
+        let generation = reloadGeneration
         refreshAuthorizationStatus()
-        guard canReadLibrary else { candidates = []; return }
+        guard canReadLibrary else {
+            candidates = []
+            isLoading = false
+            return
+        }
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if generation == reloadGeneration { isLoading = false }
+        }
 
         if authorizationStatus == .authorized, !pendingDeletions.records.isEmpty {
             let availableIdentifiers = Set(
@@ -40,24 +50,42 @@ final class PhotoLibraryService: ObservableObject {
             pendingDeletions.reconcile(validAssetIdentifiers: availableIdentifiers)
         }
 
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        if let start = settings.period.startDate() { options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate) }
-        let result = PHAsset.fetchAssets(with: options)
-        var next: [PHAsset] = []
-        result.enumerateObjects { asset, _, _ in
-            guard settings.includes(asset),
-                  !pendingDeletions.contains(assetIdentifier: asset.localIdentifier),
-                  !history.hasReviewed(assetIdentifier: asset.localIdentifier, conditionKey: settings.conditionKey) else {
-                return
+        let pendingIdentifiers = pendingDeletions.assetIdentifiers
+        let reviewedIdentifiers = history.assetIdentifiers(for: settings.conditionKey)
+        let next = await Task.detached(priority: .userInitiated) {
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            if let start = settings.period.startDate() {
+                options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
             }
-            next.append(asset)
-        }
+            let result = PHAsset.fetchAssets(with: options)
+            var assets: [PHAsset] = []
+            assets.reserveCapacity(result.count)
+            result.enumerateObjects { asset, _, stop in
+                if Task.isCancelled {
+                    stop.pointee = true
+                    return
+                }
+                guard settings.includes(asset),
+                      !pendingIdentifiers.contains(asset.localIdentifier),
+                      !reviewedIdentifiers.contains(asset.localIdentifier) else { return }
+                assets.append(asset)
+            }
+            return assets
+        }.value
+        guard !Task.isCancelled, generation == reloadGeneration else { return }
         candidates = next
         updateCache(startingAt: 0)
     }
 
-    func removeCandidate(_ asset: PHAsset) { candidates.removeAll { $0.localIdentifier == asset.localIdentifier } }
+    func removeCandidate(_ asset: PHAsset) {
+        if candidates.first?.localIdentifier == asset.localIdentifier {
+            candidates.removeFirst()
+        } else if let index = candidates.firstIndex(where: { $0.localIdentifier == asset.localIdentifier }) {
+            candidates.remove(at: index)
+        }
+        updateCache(startingAt: 0)
+    }
 
     func restoreCandidate(_ asset: PHAsset) {
         guard !candidates.contains(where: { $0.localIdentifier == asset.localIdentifier }) else { return }
@@ -75,14 +103,22 @@ final class PhotoLibraryService: ObservableObject {
         return localIdentifiers.compactMap { assetsByIdentifier[$0] }
     }
 
-    func fetchImageAssets() -> [PHAsset] {
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let result = PHAsset.fetchAssets(with: .image, options: options)
-        var assets: [PHAsset] = []
-        assets.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in assets.append(asset) }
-        return assets
+    func fetchAllImageAssets() async -> [PHAsset] {
+        await Task.detached(priority: .utility) {
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+            let result = PHAsset.fetchAssets(with: .image, options: options)
+            var assets: [PHAsset] = []
+            assets.reserveCapacity(result.count)
+            result.enumerateObjects { asset, _, stop in
+                if Task.isCancelled {
+                    stop.pointee = true
+                } else {
+                    assets.append(asset)
+                }
+            }
+            return assets
+        }.value
     }
 
     func markFavorite(_ asset: PHAsset) async throws {
@@ -108,10 +144,34 @@ final class PhotoLibraryService: ObservableObject {
         return nsError.domain == PHPhotosErrorDomain && nsError.code == 3072
     }
 
-    func updateCache(startingAt index: Int, targetSize: CGSize = CGSize(width: 900, height: 1200)) {
-        if !cachedAssets.isEmpty { imageManager.stopCachingImages(for: cachedAssets, targetSize: targetSize, contentMode: .aspectFill, options: nil) }
-        let end = min(index + 4, candidates.count)
-        cachedAssets = index < end ? Array(candidates[index..<end]) : []
-        if !cachedAssets.isEmpty { imageManager.startCachingImages(for: cachedAssets, targetSize: targetSize, contentMode: .aspectFill, options: nil) }
+    func updateCache(startingAt index: Int) {
+        let end = min(index + 3, candidates.count)
+        let nextAssets = index < end ? Array(candidates[index..<end]) : []
+        let nextIdentifiers = Set(nextAssets.map(\.localIdentifier))
+        let currentIdentifiers = Set(cachedAssets.map(\.localIdentifier))
+        let removedAssets = cachedAssets.filter { !nextIdentifiers.contains($0.localIdentifier) }
+        let addedAssets = nextAssets.filter { !currentIdentifiers.contains($0.localIdentifier) }
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .fastFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = false
+
+        if !removedAssets.isEmpty {
+            imageManager.stopCachingImages(
+                for: removedAssets,
+                targetSize: deckCacheTargetSize,
+                contentMode: .aspectFit,
+                options: options
+            )
+        }
+        if !addedAssets.isEmpty {
+            imageManager.startCachingImages(
+                for: addedAssets,
+                targetSize: deckCacheTargetSize,
+                contentMode: .aspectFit,
+                options: options
+            )
+        }
+        cachedAssets = nextAssets
     }
 }

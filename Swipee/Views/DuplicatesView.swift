@@ -29,8 +29,8 @@ struct DuplicatesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("再解析", systemImage: "arrow.clockwise") {
-                        Task { await analyze(force: true) }
+                    Button("写真を確認", systemImage: "arrow.clockwise") {
+                        Task { await analyze() }
                     }
                     Button("確認済みを再表示", systemImage: "eye") {
                         reviewed.clear()
@@ -41,9 +41,9 @@ struct DuplicatesView: View {
                 .accessibilityLabel("重複候補メニュー")
             }
         }
-        .task { await authorizeAndAnalyze() }
+        .task { await authorizeAndLoadCachedResults() }
         .onChange(of: analysis.groups) { _, _ in loadAssets() }
-        .refreshable { await analyze(force: true) }
+        .refreshable { await analyze() }
         .alert("解析を完了できませんでした", isPresented: Binding(
             get: { analysis.errorMessage != nil },
             set: { if !$0 { analysis.errorMessage = nil } }
@@ -76,6 +76,7 @@ struct DuplicatesView: View {
         ScrollView {
             VStack(spacing: 12) {
                 if analysis.isAnalyzing { compactProgress }
+                analysisSummary
                 if library.authorizationStatus == .limited {
                     Label("選択した写真のみ解析しています", systemImage: "photo.badge.checkmark")
                         .font(.caption)
@@ -106,7 +107,7 @@ struct DuplicatesView: View {
         VStack(spacing: 16) {
             ProgressView(value: Double(analysis.analyzedCount), total: Double(max(analysis.totalCount, 1)))
                 .frame(maxWidth: 240)
-            Text("似ている写真を確認しています")
+            Text("重複しそうな写真を確認しています")
                 .font(.headline)
             Text("\(analysis.analyzedCount) / \(analysis.totalCount)")
                 .font(.subheadline.monospacedDigit())
@@ -118,20 +119,32 @@ struct DuplicatesView: View {
     private var compactProgress: some View {
         VStack(spacing: 5) {
             ProgressView(value: Double(analysis.analyzedCount), total: Double(max(analysis.totalCount, 1)))
-            Text("写真を解析中 \(analysis.analyzedCount) / \(analysis.totalCount)")
+            Text("候補を確認中 \(analysis.analyzedCount) / \(analysis.totalCount)")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var analysisSummary: some View {
+        HStack(spacing: 8) {
+            Label("候補\(analysis.indexedCount)枚を画像確認済み", systemImage: "checkmark.circle")
+            if analysis.unavailableCount > 0 {
+                Text("・ iCloud上の\(analysis.unavailableCount)枚は未確認")
+            }
+            Spacer()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     private var emptyState: some View {
         ContentUnavailableView {
             Label("重複候補はありません", systemImage: "square.on.square")
         } description: {
-            Text("現在アクセスできる写真から、よく似た組み合わせは見つかりませんでした。")
+            Text("PhotoKitの情報で絞り込んだ写真から、よく似た組み合わせは見つかりませんでした。")
         } actions: {
-            Button("もう一度解析") {
-                Task { await analyze(force: true) }
+            Button("写真を確認") {
+                Task { await analyze() }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -152,16 +165,16 @@ struct DuplicatesView: View {
         }
     }
 
-    private func authorizeAndAnalyze() async {
+    private func authorizeAndLoadCachedResults() async {
         if library.authorizationStatus == .notDetermined { await library.requestAuthorization() }
-        await analyze(force: false)
+        await analysis.loadCachedResults()
+        loadAssets()
     }
 
-    private func analyze(force: Bool) async {
+    private func analyze() async {
         await analysis.analyzeIfNeeded(
             library: library,
-            pendingDeletions: pendingDeletions,
-            force: force
+            pendingDeletions: pendingDeletions
         )
         loadAssets()
     }

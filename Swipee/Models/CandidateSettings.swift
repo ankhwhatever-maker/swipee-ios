@@ -1,7 +1,7 @@
 import Foundation
 import Photos
 
-enum CandidatePeriod: Int, Codable, CaseIterable, Identifiable {
+enum CandidatePeriod: Int, Codable, CaseIterable, Identifiable, Sendable {
     case oneMonth, threeMonths, oneYear, threeYears, all
 
     var id: Int { rawValue }
@@ -15,7 +15,7 @@ enum CandidatePeriod: Int, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum CandidateMediaKind: String, Codable, CaseIterable, Identifiable {
+enum CandidateMediaKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case photo, video, screenshot
     var id: String { rawValue }
     var label: String {
@@ -27,7 +27,7 @@ enum CandidateMediaKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct CandidateSettings: Codable, Equatable {
+struct CandidateSettings: Codable, Equatable, Sendable {
     var period: CandidatePeriod = .all
     var mediaKinds: Set<CandidateMediaKind> = [.photo, .screenshot]
 

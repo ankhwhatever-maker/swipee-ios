@@ -16,10 +16,13 @@ struct DuplicateGroupSwipeView: View {
     @State private var assets: [PHAsset] = []
     @State private var processing = false
     @State private var requestedDecision: SwipeDecision?
+    @State private var activeSwipeDecision: SwipeDecision?
     @State private var showingReview = false
     @State private var reviewFinished = false
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
+    @State private var cachedAssets: [PHAsset] = []
+    private let actionOverlayHeight: CGFloat = 76
 
     private struct RestoringCard {
         let asset: PHAsset
@@ -53,8 +56,10 @@ struct DuplicateGroupSwipeView: View {
         .toolbar(.hidden, for: .tabBar)
         .task {
             assets = library.fetchAssets(localIdentifiers: group.assetIdentifiers)
+            updateImageCache()
             if !assets.isEmpty, remainingAssets.isEmpty { showingReview = true }
         }
+        .onDisappear { stopImageCache() }
         .fullScreenCover(isPresented: $showingReview, onDismiss: {
             if reviewFinished {
                 dismiss()
@@ -85,54 +90,54 @@ struct DuplicateGroupSwipeView: View {
         VStack(spacing: 10) {
             GeometryReader { proxy in
                 ZStack {
-                    let visibleAssets = remainingAssets
-                        .filter { $0.localIdentifier != restoringCard?.asset.localIdentifier }
-                    ForEach(Array(visibleAssets.prefix(3).enumerated()).reversed(), id: \.element.localIdentifier) { index, asset in
+                    if let asset = remainingAssets.first {
+                        let restoration = restoringCard?.asset.localIdentifier == asset.localIdentifier
+                            ? restoringCard
+                            : nil
                         SwipeCardView(
                             asset: asset,
                             manager: library.imageManager,
-                            isInteractive: index == 0 && !processing,
-                            requestedDecision: index == 0 ? $requestedDecision : .constant(nil)
-                        ) { decide($0, asset: asset) }
-                        .zIndex(Double(3 - index))
-                    }
-
-                    if let restoringCard {
-                        SwipeCardView(
-                            asset: restoringCard.asset,
-                            manager: library.imageManager,
-                            isInteractive: false,
-                            requestedDecision: .constant(nil),
-                            onDecision: { _ in }
-                        )
-                        .offset(restorationOffset(for: restoringCard.decision, in: proxy.size))
-                        .rotationEffect(restorationRotation(for: restoringCard.decision))
-                        .opacity(reduceMotion ? restorationProgress : 1)
-                        .zIndex(10)
-                        .accessibilityHidden(true)
+                            isInteractive: !processing && restoration == nil,
+                            allowsNetworkAccess: true,
+                            maximumSize: proxy.size,
+                            metadataBottomInset: actionOverlayHeight,
+                            requestedDecision: $requestedDecision,
+                            activeSwipeDecision: $activeSwipeDecision
+                        ) { isFavorite in
+                            await setFavorite(asset, isFavorite: isFavorite)
+                        } onDecision: {
+                            await decide($0, asset: asset)
+                        }
+                        .id(asset.localIdentifier)
+                        .offset(restoration.map { restorationOffset(for: $0.decision, in: proxy.size) } ?? .zero)
+                        .rotationEffect(restoration.map { restorationRotation(for: $0.decision) } ?? .zero)
+                        .opacity(restoration != nil && reduceMotion ? restorationProgress : 1)
+                        .accessibilityHidden(restoration != nil)
+                        .transition(.opacity)
                     }
                 }
             }
             .overlay(alignment: .top) { progressPill.padding(.top, 12) }
+            .overlay(alignment: .bottom) { actionControls.padding(.vertical, 4) }
+        }
+    }
 
-            ZStack {
-                HStack(spacing: 32) {
-                    actionButton("xmark", color: .swipeeDelete, label: "削除候補へ") {
-                        requestedDecision = .trash
-                    }
-                    actionButton("star.fill", color: .swipeeFavorite, label: "お気に入り") {
-                        requestedDecision = .favorite
-                    }
-                    actionButton("heart.fill", color: .swipeeKeep, label: "キープ") {
-                        requestedDecision = .keep
-                    }
+    private var actionControls: some View {
+        ZStack {
+            HStack(spacing: 32) {
+                actionButton("xmark", color: .swipeeDelete, label: "削除候補へ", decision: .trash) {
+                    requestedDecision = .trash
                 }
-                HStack {
-                    undoButton
-                    Spacer()
+                actionButton("checkmark", color: .swipeeKeep, label: "キープ", decision: .keep) {
+                    requestedDecision = .keep
                 }
             }
-            .padding(.vertical, 4)
+            HStack {
+                undoButton
+                    .opacity(activeSwipeDecision == nil ? 1 : 0)
+                    .scaleEffect(activeSwipeDecision == nil ? 1 : 0.72)
+                Spacer()
+            }
         }
     }
 
@@ -181,6 +186,7 @@ struct DuplicateGroupSwipeView: View {
         _ icon: String,
         color: Color,
         label: String,
+        decision: SwipeDecision,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -192,34 +198,50 @@ struct DuplicateGroupSwipeView: View {
                 .foregroundStyle(color)
                 .shadow(color: .black.opacity(colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
         }
+        .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
+        .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
         .disabled(processing)
         .accessibilityLabel(label)
     }
 
-    private func decide(_ decision: SwipeDecision, asset: PHAsset) {
-        guard !processing, remainingAssets.first?.localIdentifier == asset.localIdentifier else { return }
+    private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
+        guard !processing, remainingAssets.first?.localIdentifier == asset.localIdentifier else { return false }
         processing = true
-        Task {
-            do {
-                let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
-                if decision == .favorite { try await library.markFavorite(asset) }
-                if decision == .trash {
-                    pendingDeletions.enqueue(
-                        assetIdentifier: asset.localIdentifier,
-                        sourceConditionKey: "duplicates|\(group.id)"
-                    )
-                }
+        do {
+            let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
+            if decision == .favorite { try await library.markFavorite(asset) }
+            if decision == .trash {
+                pendingDeletions.enqueue(
+                    assetIdentifier: asset.localIdentifier,
+                    sourceConditionKey: "duplicates|\(group.id)"
+                )
+            }
+            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
                 duplicateSessions.append(
                     groupIdentifier: group.id,
                     assetIdentifier: asset.localIdentifier,
                     decision: decision,
                     previousFavoriteState: previousFavoriteState
                 )
-                if remainingAssets.isEmpty { showingReview = true }
-            } catch {
-                library.errorMessage = error.localizedDescription
             }
+            updateImageCache()
             processing = false
+            if remainingAssets.isEmpty { showingReview = true }
+            return true
+        } catch {
+            library.errorMessage = error.localizedDescription
+            processing = false
+            return false
+        }
+    }
+
+    private func setFavorite(_ asset: PHAsset, isFavorite: Bool) async -> Bool {
+        do {
+            try await library.setFavorite(asset, isFavorite: isFavorite)
+            return true
+        } catch {
+            library.errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -241,6 +263,7 @@ struct DuplicateGroupSwipeView: View {
                     pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
                 }
                 duplicateSessions.removeLast(groupIdentifier: group.id)
+                updateImageCache()
                 processing = false
                 return
             }
@@ -253,6 +276,7 @@ struct DuplicateGroupSwipeView: View {
                     pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
                 }
                 duplicateSessions.removeLast(groupIdentifier: group.id)
+                updateImageCache()
                 await restore(asset, from: originalDecision)
             } catch {
                 library.errorMessage = error.localizedDescription
@@ -300,5 +324,55 @@ struct DuplicateGroupSwipeView: View {
         case .keep: return .degrees(10 * remaining)
         case .favorite: return .zero
         }
+    }
+
+    private func updateImageCache() {
+        let nextAssets = Array(remainingAssets.prefix(3))
+        let nextIdentifiers = Set(nextAssets.map(\.localIdentifier))
+        let currentIdentifiers = Set(cachedAssets.map(\.localIdentifier))
+        let removedAssets = cachedAssets.filter { !nextIdentifiers.contains($0.localIdentifier) }
+        let addedAssets = nextAssets.filter { !currentIdentifiers.contains($0.localIdentifier) }
+        let options = cacheRequestOptions
+
+        if !removedAssets.isEmpty {
+            library.imageManager.stopCachingImages(
+                for: removedAssets,
+                targetSize: cacheTargetSize,
+                contentMode: .aspectFit,
+                options: options
+            )
+        }
+        if !addedAssets.isEmpty {
+            library.imageManager.startCachingImages(
+                for: addedAssets,
+                targetSize: cacheTargetSize,
+                contentMode: .aspectFit,
+                options: options
+            )
+        }
+        cachedAssets = nextAssets
+    }
+
+    private func stopImageCache() {
+        guard !cachedAssets.isEmpty else { return }
+        library.imageManager.stopCachingImages(
+            for: cachedAssets,
+            targetSize: cacheTargetSize,
+            contentMode: .aspectFit,
+            options: cacheRequestOptions
+        )
+        cachedAssets = []
+    }
+
+    private var cacheTargetSize: CGSize {
+        CGSize(width: 900, height: 1200)
+    }
+
+    private var cacheRequestOptions: PHImageRequestOptions {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .fastFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = false
+        return options
     }
 }

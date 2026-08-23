@@ -14,19 +14,41 @@ struct OrganizeView: View {
     @State private var showingFilters = false
     @State private var showingSessionReview = false
     @State private var processing = false
-    @State private var notice: String?
     @State private var requestedDecision: SwipeDecision?
+    @State private var activeSwipeDecision: SwipeDecision?
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
+    private let actionOverlayHeight: CGFloat = 76
 
     private struct RestoringCard {
         let asset: PHAsset
         let decision: SwipeDecision
     }
 
+    private var isDeckVisible: Bool {
+        switch library.authorizationStatus {
+        case .authorized, .limited:
+            return !library.isLoading && !session.isComplete && !library.candidates.isEmpty
+        default:
+            return false
+        }
+    }
+
+    private var organizeBackground: Color {
+        isDeckVisible ? Color(red: 0.043, green: 0.043, blue: 0.051) : .swipeeBackground
+    }
+
+    private var deckControlBackground: Color {
+        isDeckVisible ? .white.opacity(0.12) : .swipeeElevatedSurface
+    }
+
+    private var deckControlBorder: Color {
+        isDeckVisible ? .white.opacity(0.2) : .swipeeBorder
+    }
+
     var body: some View {
         ZStack {
-            Color.swipeeBackground.ignoresSafeArea()
+            organizeBackground.ignoresSafeArea()
             content.padding(.horizontal, 10).padding(.bottom, 6)
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -35,15 +57,11 @@ struct OrganizeView: View {
         .fullScreenCover(isPresented: $showingSessionReview, onDismiss: {
             Task { await reload() }
         }) {
-            ReviewSessionFlowView {
-                Task { await reload() }
-            }
+            ReviewSessionFlowView { }
         }
-        .task { await authorizeAndLoad() }
-        .task(id: settings.value.conditionKey) { await reload() }
+        .task(id: settings.value.conditionKey) { await authorizeAndLoad() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await reload() } } }
         .alert("操作を完了できませんでした", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(library.errorMessage ?? "") }
-        .overlay(alignment: .bottom) { if let notice { Text(notice).font(.footnote.bold()).padding(.horizontal, 16).padding(.vertical, 10).background(Color.swipeeElevatedSurface, in: Capsule()).overlay { Capsule().stroke(Color.swipeeBorder) }.padding(.bottom, 10).transition(.move(edge: .bottom).combined(with: .opacity)) } }
     }
 
     @ViewBuilder private var content: some View {
@@ -61,45 +79,56 @@ struct OrganizeView: View {
     private var deck: some View {
         VStack(spacing: 10) {
             if library.authorizationStatus == .limited {
-                Label("選択した写真のみ表示しています", systemImage: "photo.badge.checkmark").font(.caption).foregroundStyle(.secondary)
+                Label("選択した写真のみ表示しています", systemImage: "photo.badge.checkmark")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
             }
             GeometryReader { proxy in
                 ZStack {
-                    let visibleCandidates = library.candidates
-                        .filter { $0.localIdentifier != restoringCard?.asset.localIdentifier }
-                    ForEach(Array(visibleCandidates.prefix(3).enumerated()).reversed(), id: \.element.localIdentifier) { index, asset in
-                        SwipeCardView(asset: asset, manager: library.imageManager, isInteractive: index == 0 && !processing, requestedDecision: index == 0 ? $requestedDecision : .constant(nil)) { decide($0, asset: asset) }
-                            .zIndex(Double(3 - index))
-                    }
-                    if let restoringCard {
+                    if let asset = library.candidates.first {
+                        let restoration = restoringCard?.asset.localIdentifier == asset.localIdentifier
+                            ? restoringCard
+                            : nil
                         SwipeCardView(
-                            asset: restoringCard.asset,
+                            asset: asset,
                             manager: library.imageManager,
-                            isInteractive: false,
-                            requestedDecision: .constant(nil),
-                            onDecision: { _ in }
-                        )
-                        .offset(restorationOffset(for: restoringCard.decision, in: proxy.size))
-                        .rotationEffect(restorationRotation(for: restoringCard.decision))
-                        .opacity(reduceMotion ? restorationProgress : 1)
-                        .zIndex(10)
-                        .accessibilityHidden(true)
+                            isInteractive: !processing && restoration == nil,
+                            allowsNetworkAccess: true,
+                            maximumSize: proxy.size,
+                            metadataBottomInset: actionOverlayHeight,
+                            requestedDecision: $requestedDecision,
+                            activeSwipeDecision: $activeSwipeDecision
+                        ) { isFavorite in
+                            await setFavorite(asset, isFavorite: isFavorite)
+                        } onDecision: {
+                            await decide($0, asset: asset)
+                        }
+                        .id(asset.localIdentifier)
+                        .offset(restoration.map { restorationOffset(for: $0.decision, in: proxy.size) } ?? .zero)
+                        .rotationEffect(restoration.map { restorationRotation(for: $0.decision) } ?? .zero)
+                        .opacity(restoration != nil && reduceMotion ? restorationProgress : 1)
+                        .accessibilityHidden(restoration != nil)
+                        .transition(.opacity)
                     }
                 }
             }
             .overlay(alignment: .top) { progressPill.padding(.top, 12) }
-            ZStack {
-                HStack(spacing: 32) {
-                    actionButton("xmark", color: .swipeeDelete, label: "削除候補へ") { requestedDecision = .trash }
-                    actionButton("star.fill", color: .swipeeFavorite, label: "お気に入り") { requestedDecision = .favorite }
-                    actionButton("heart.fill", color: .swipeeKeep, label: "キープ") { requestedDecision = .keep }
-                }
-                HStack {
-                    undoButton
-                    Spacer()
-                }
+            .overlay(alignment: .bottom) { actionControls.padding(.vertical, 4) }
+        }
+    }
+
+    private var actionControls: some View {
+        ZStack {
+            HStack(spacing: 32) {
+                actionButton("xmark", color: .swipeeDelete, label: "削除候補へ", decision: .trash) { requestedDecision = .trash }
+                actionButton("checkmark", color: .swipeeKeep, label: "キープ", decision: .keep) { requestedDecision = .keep }
             }
-            .padding(.vertical, 4)
+            HStack {
+                undoButton
+                    .opacity(activeSwipeDecision == nil ? 1 : 0)
+                    .scaleEffect(activeSwipeDecision == nil ? 1 : 0.72)
+                Spacer()
+            }
         }
     }
 
@@ -120,10 +149,10 @@ struct OrganizeView: View {
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.headline.bold())
                 .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().stroke(Color.swipeeBorder, lineWidth: 1) }
+                .background(deckControlBackground, in: Circle())
+                .overlay { Circle().stroke(deckControlBorder, lineWidth: 1) }
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(isDeckVisible ? Color.white : Color.primary)
         .accessibilityLabel("表示する写真")
         .padding(.top, 8)
         .padding(.trailing, 14)
@@ -136,29 +165,38 @@ struct OrganizeView: View {
             Image(systemName: "arrow.uturn.backward")
                 .font(.subheadline.bold())
                 .frame(width: 34, height: 34)
-                .background(Color.swipeeElevatedSurface, in: Circle())
-                .overlay { Circle().stroke(Color.swipeeBorder) }
-                .shadow(color: .black.opacity(colorScheme == .light && canUndoLastAction ? 0.08 : 0), radius: 5, y: 2)
+                .background(deckControlBackground, in: Circle())
+                .overlay { Circle().stroke(deckControlBorder) }
+                .shadow(color: .black.opacity(!isDeckVisible && colorScheme == .light && canUndoLastAction ? 0.08 : 0), radius: 5, y: 2)
                 .frame(width: 44, height: 44)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(isDeckVisible ? Color.white.opacity(0.82) : Color.secondary)
         .opacity(canUndoLastAction ? 1 : 0.28)
         .disabled(processing || !canUndoLastAction)
         .accessibilityLabel("直前の操作を戻す")
         .accessibilityHint("直前に操作した写真をカードへ戻します")
     }
 
-    private func actionButton(_ icon: String, color: Color, label: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(
+        _ icon: String,
+        color: Color,
+        label: String,
+        decision: SwipeDecision,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title2.bold())
                 .frame(width: 58, height: 58)
-                .background(Color.swipeeElevatedSurface, in: Circle())
-                .overlay { Circle().stroke(Color.swipeeBorder) }
+                .background(deckControlBackground, in: Circle())
+                .overlay { Circle().stroke(deckControlBorder) }
                 .foregroundStyle(color)
-                .shadow(color: .black.opacity(colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
+                .shadow(color: .black.opacity(!isDeckVisible && colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
         }
-            .disabled(processing).accessibilityLabel(label)
+        .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
+        .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
+        .disabled(processing)
+        .accessibilityLabel(label)
     }
 
     private var emptyState: some View {
@@ -222,41 +260,57 @@ struct OrganizeView: View {
             pendingDeletions: pendingDeletions
         )
     }
-    private func decide(_ decision: SwipeDecision, asset: PHAsset) {
-        guard !processing, library.candidates.first?.localIdentifier == asset.localIdentifier else { return }
+    private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
+        guard !processing, library.candidates.first?.localIdentifier == asset.localIdentifier else { return false }
         processing = true
-        Task {
-            if decision == .trash {
-                pendingDeletions.enqueue(
-                    assetIdentifier: asset.localIdentifier,
-                    sourceConditionKey: settings.value.conditionKey
-                )
-                session.append(
-                    assetIdentifier: asset.localIdentifier,
-                    sourceConditionKey: settings.value.conditionKey,
-                    decision: .trash
-                )
+        if decision == .trash {
+            pendingDeletions.enqueue(
+                assetIdentifier: asset.localIdentifier,
+                sourceConditionKey: settings.value.conditionKey
+            )
+            session.append(
+                assetIdentifier: asset.localIdentifier,
+                sourceConditionKey: settings.value.conditionKey,
+                decision: .trash
+            )
+            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
                 library.removeCandidate(asset)
-                library.updateCache(startingAt: 0)
-                processing = false
-                if session.isComplete { showingSessionReview = true }
-                return
             }
-            do {
-                let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
-                if decision == .favorite { try await library.markFavorite(asset) }
-                history.record(assetIdentifier: asset.localIdentifier, conditionKey: settings.value.conditionKey, decision: decision)
-                session.append(
-                    assetIdentifier: asset.localIdentifier,
-                    sourceConditionKey: settings.value.conditionKey,
-                    decision: decision,
-                    previousFavoriteState: previousFavoriteState
-                )
-                library.removeCandidate(asset)
-                library.updateCache(startingAt: 0)
-                if session.isComplete { showingSessionReview = true }
-            } catch { library.errorMessage = error.localizedDescription }
             processing = false
+            if session.isComplete { showingSessionReview = true }
+            return true
+        }
+
+        do {
+            let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
+            if decision == .favorite { try await library.markFavorite(asset) }
+            history.record(assetIdentifier: asset.localIdentifier, conditionKey: settings.value.conditionKey, decision: decision)
+            session.append(
+                assetIdentifier: asset.localIdentifier,
+                sourceConditionKey: settings.value.conditionKey,
+                decision: decision,
+                previousFavoriteState: previousFavoriteState
+            )
+            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
+                library.removeCandidate(asset)
+            }
+            processing = false
+            if session.isComplete { showingSessionReview = true }
+            return true
+        } catch {
+            library.errorMessage = error.localizedDescription
+            processing = false
+            return false
+        }
+    }
+
+    private func setFavorite(_ asset: PHAsset, isFavorite: Bool) async -> Bool {
+        do {
+            try await library.setFavorite(asset, isFavorite: isFavorite)
+            return true
+        } catch {
+            library.errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -366,5 +420,4 @@ struct OrganizeView: View {
         case .favorite: return .zero
         }
     }
-    private func showNotice(_ text: String) { withAnimation { notice = text }; Task { try? await Task.sleep(for: .seconds(3)); await MainActor.run { withAnimation { notice = nil } } } }
 }

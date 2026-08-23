@@ -1,6 +1,6 @@
 import Foundation
 
-struct DuplicatePhotoGroup: Codable, Equatable, Hashable, Identifiable {
+struct DuplicatePhotoGroup: Codable, Equatable, Hashable, Identifiable, Sendable {
     let assetIdentifiers: [String]
 
     var id: String { assetIdentifiers.sorted().joined(separator: "|") }

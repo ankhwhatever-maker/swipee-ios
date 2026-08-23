@@ -1,8 +1,6 @@
 import Foundation
-import ImageIO
 import Photos
 import UIKit
-import Vision
 
 @MainActor
 final class DuplicateAnalysisService: ObservableObject {
@@ -10,445 +8,322 @@ final class DuplicateAnalysisService: ObservableObject {
     @Published private(set) var isAnalyzing = false
     @Published private(set) var analyzedCount = 0
     @Published private(set) var totalCount = 0
+    @Published private(set) var indexedCount = 0
+    @Published private(set) var unavailableCount = 0
     @Published var errorMessage: String?
 
-    private struct Cache: Codable {
-        let libraryFingerprint: String
+    private struct Cache: Codable, Sendable {
+        let version: Int
+        let records: [DuplicateAnalysisRecord]
+        let pairs: [DuplicateSimilarPair]
         let groups: [DuplicatePhotoGroup]
-        let lightweightRecords: [LightweightRecord]
     }
 
-    private struct LightweightRecord: Codable, Sendable {
-        let identifier: String
-        let pixelWidth: Int
-        let pixelHeight: Int
-        let creationTimestamp: TimeInterval?
-        let modificationTimestamp: TimeInterval?
-        let burstIdentifier: String?
+    private struct Signature: Sendable {
         let differenceHash: UInt64
-
-        func matches(_ asset: PHAsset) -> Bool {
-            pixelWidth == asset.pixelWidth &&
-                pixelHeight == asset.pixelHeight &&
-                modificationTimestamp == asset.modificationDate?.timeIntervalSince1970
-        }
+        let averageRed: UInt8
+        let averageGreen: UInt8
+        let averageBlue: UInt8
     }
 
-    private struct FeatureDescriptor: Sendable {
-        let identifier: String
-        let archivedObservation: Data
+    private let cacheURL: URL
+    private let cacheWriter = CacheWriter()
+    private var cacheLoadTask: Task<LoadedState?, Never>?
+    private var didLoadCache = false
+    private var records: [String: DuplicateAnalysisRecord] = [:]
+    private var similarPairs: Set<DuplicateSimilarPair> = []
+    private var cacheRevision = 0
+
+    private struct LoadedState: Sendable {
+        let records: [String: DuplicateAnalysisRecord]
+        let pairs: Set<DuplicateSimilarPair>
+        let groups: [DuplicatePhotoGroup]
     }
 
-    private struct CandidatePair: Hashable, Sendable {
-        let leftIdentifier: String
-        let rightIdentifier: String
+    private actor CacheWriter {
+        private var latestRevision = 0
 
-        init(_ leftIdentifier: String, _ rightIdentifier: String) {
-            if leftIdentifier < rightIdentifier {
-                self.leftIdentifier = leftIdentifier
-                self.rightIdentifier = rightIdentifier
-            } else {
-                self.leftIdentifier = rightIdentifier
-                self.rightIdentifier = leftIdentifier
-            }
-        }
-    }
-
-    private struct HashBand: Hashable {
-        let index: Int
-        let value: UInt16
-    }
-
-    private let defaults: UserDefaults
-    private let cacheKey = "duplicateAnalysis.cache.v2"
-    private var cachedFingerprint: String?
-    private var cachedLightweightRecords: [String: LightweightRecord] = [:]
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: cacheKey),
-           let cache = try? JSONDecoder().decode(Cache.self, from: data) {
-            cachedFingerprint = cache.libraryFingerprint
-            groups = cache.groups
-            cachedLightweightRecords = Dictionary(
-                uniqueKeysWithValues: cache.lightweightRecords.map { ($0.identifier, $0) }
+        func write(_ cache: Cache, revision: Int, to url: URL) throws {
+            guard revision >= latestRevision else { return }
+            latestRevision = revision
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            let data = try encoder.encode(cache)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
             )
+            try data.write(to: url, options: .atomic)
         }
+    }
+
+    init(defaults: UserDefaults = .standard, cacheURL: URL? = nil) {
+        _ = defaults
+        self.cacheURL = cacheURL ?? Self.defaultCacheURL()
+        let sourceURL = self.cacheURL
+        cacheLoadTask = Task.detached(priority: .utility) {
+            Self.loadState(cacheURL: sourceURL)
+        }
+    }
+
+    func loadCachedResults() async {
+        await ensureCacheLoaded()
     }
 
     func analyzeIfNeeded(
         library: PhotoLibraryService,
-        pendingDeletions: PendingDeletionStore,
-        force: Bool = false
+        pendingDeletions: PendingDeletionStore
     ) async {
         guard !isAnalyzing else { return }
+        await ensureCacheLoaded()
         library.refreshAuthorizationStatus()
         guard library.canReadLibrary else { return }
 
-        let assets = library.fetchImageAssets().filter {
-            !pendingDeletions.contains(assetIdentifier: $0.localIdentifier)
-        }
-        let fingerprint = libraryFingerprint(for: assets)
-        if !force, cachedFingerprint == fingerprint { return }
-
         isAnalyzing = true
         analyzedCount = 0
-        totalCount = assets.count
+        totalCount = 0
         errorMessage = nil
         defer { isAnalyzing = false }
 
-        var lightweightRecords: [LightweightRecord] = []
-        lightweightRecords.reserveCapacity(assets.count)
-
-        for asset in assets {
-            if Task.isCancelled { return }
-            if !force,
-               let cached = cachedLightweightRecords[asset.localIdentifier],
-               cached.matches(asset) {
-                lightweightRecords.append(cached)
-            } else if let image = await requestImage(
-                for: asset,
-                manager: library.imageManager,
-                targetSize: CGSize(width: 48, height: 48)
-            ), let differenceHash = Self.differenceHash(for: image) {
-                lightweightRecords.append(
-                    LightweightRecord(
-                        identifier: asset.localIdentifier,
-                        pixelWidth: asset.pixelWidth,
-                        pixelHeight: asset.pixelHeight,
-                        creationTimestamp: asset.creationDate?.timeIntervalSince1970,
-                        modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
-                        burstIdentifier: asset.burstIdentifier,
-                        differenceHash: differenceHash
-                    )
-                )
-            }
-            analyzedCount += 1
-        }
-
-        let candidatePairs = await Self.makeCandidatePairs(lightweightRecords)
-        let candidateIdentifiers = Set(candidatePairs.flatMap {
-            [$0.leftIdentifier, $0.rightIdentifier]
-        })
-        let assetsByIdentifier = Dictionary(
-            uniqueKeysWithValues: assets.map { ($0.localIdentifier, $0) }
-        )
-
-        var featureDescriptors: [FeatureDescriptor] = []
-        featureDescriptors.reserveCapacity(candidateIdentifiers.count)
-        for identifier in candidateIdentifiers.sorted() {
-            if Task.isCancelled { return }
-            guard let asset = assetsByIdentifier[identifier],
-                  let image = await requestImage(
-                    for: asset,
-                    manager: library.imageManager,
-                    targetSize: CGSize(width: 160, height: 160)
-                  ),
-                  let cgImage = image.cgImage,
-                  let archivedObservation = await Self.makeFeaturePrint(
-                    cgImage: cgImage,
-                    orientation: Self.cgOrientation(from: image.imageOrientation)
-                  ) else { continue }
-            featureDescriptors.append(
-                FeatureDescriptor(
-                    identifier: identifier,
-                    archivedObservation: archivedObservation
-                )
+        let pending = pendingDeletions.assetIdentifiers
+        let allAssets = await library.fetchAllImageAssets()
+        guard !Task.isCancelled else { return }
+        let metadata = allAssets.map {
+            DuplicateAssetMetadata(
+                identifier: $0.localIdentifier,
+                creationTimestamp: $0.creationDate?.timeIntervalSince1970,
+                pixelWidth: $0.pixelWidth,
+                pixelHeight: $0.pixelHeight,
+                burstIdentifier: $0.burstIdentifier,
+                isScreenshot: $0.mediaSubtypes.contains(.photoScreenshot)
             )
         }
+        let metadataCandidateIdentifiers = await Task.detached(priority: .utility) {
+            DuplicateCandidateFilter.candidateIdentifiers(from: metadata, excluding: pending)
+        }.value
+        let assets = allAssets.filter {
+            metadataCandidateIdentifiers.contains($0.localIdentifier) &&
+                records[$0.localIdentifier]?.matches($0) != true
+        }
+        totalCount = assets.count
 
-        let nextGroups = await Self.groupSimilarPhotos(
-            featureDescriptors,
-            candidatePairs: candidatePairs
+        let groupIdentifiers = Set(groups.flatMap(\.assetIdentifiers))
+        let availableIdentifiers = Set(allAssets.map(\.localIdentifier))
+        let availableGroupIdentifiers = groupIdentifiers.intersection(availableIdentifiers)
+        let deleted = groupIdentifiers.subtracting(availableGroupIdentifiers)
+
+        await process(
+            assets: assets,
+            deleting: deleted,
+            manager: library.imageManager
         )
-        groups = nextGroups
-        cachedFingerprint = fingerprint
-        cachedLightweightRecords = Dictionary(
-            uniqueKeysWithValues: lightweightRecords.map { ($0.identifier, $0) }
-        )
-        persist(
-            fingerprint: fingerprint,
-            groups: nextGroups,
-            lightweightRecords: lightweightRecords
-        )
+        updateCounts()
     }
 
     func removeGroup(_ groupIdentifier: String) {
+        guard let group = groups.first(where: { $0.id == groupIdentifier }) else { return }
+        let identifiers = Set(group.assetIdentifiers)
+        similarPairs = similarPairs.filter {
+            !(identifiers.contains($0.leftIdentifier) && identifiers.contains($0.rightIdentifier))
+        }
         groups.removeAll { $0.id == groupIdentifier }
-        guard let cachedFingerprint else { return }
-        persist(
-            fingerprint: cachedFingerprint,
-            groups: groups,
-            lightweightRecords: Array(cachedLightweightRecords.values)
-        )
+        persist()
     }
 
-    private func requestImage(
+    private func process(
+        assets: [PHAsset],
+        deleting deletedIdentifiers: Set<String>,
+        manager: PHCachingImageManager
+    ) async {
+        guard !assets.isEmpty || !deletedIdentifiers.isEmpty else { return }
+
+        var affectedIdentifiers = deletedIdentifiers
+        for identifier in deletedIdentifiers { records.removeValue(forKey: identifier) }
+
+        for asset in assets {
+            if Task.isCancelled { return }
+            let identifier = asset.localIdentifier
+            affectedIdentifiers.insert(identifier)
+            let image = await requestSmallImage(for: asset, manager: manager)
+            let signature: Signature?
+            if let image {
+                signature = await Self.signature(for: image)
+            } else {
+                signature = nil
+            }
+            records[identifier] = DuplicateAnalysisRecord(
+                identifier: identifier,
+                pixelWidth: asset.pixelWidth,
+                pixelHeight: asset.pixelHeight,
+                creationTimestamp: asset.creationDate?.timeIntervalSince1970,
+                modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
+                burstIdentifier: asset.burstIdentifier,
+                differenceHash: signature?.differenceHash,
+                averageRed: signature?.averageRed,
+                averageGreen: signature?.averageGreen,
+                averageBlue: signature?.averageBlue
+            )
+            analyzedCount += 1
+        }
+
+        similarPairs = similarPairs.filter { !$0.contains(any: affectedIdentifiers) }
+        var newPairs = await DuplicateSimilarityEngine.findSimilarPairs(
+            records: Array(records.values),
+            involving: affectedIdentifiers
+        )
+        let candidateIdentifiers = Set(newPairs.flatMap {
+            [$0.leftIdentifier, $0.rightIdentifier]
+        })
+        if !candidateIdentifiers.isEmpty {
+            let result = PHAsset.fetchAssets(
+                withLocalIdentifiers: Array(candidateIdentifiers),
+                options: nil
+            )
+            var availableCandidateIdentifiers: Set<String> = []
+            result.enumerateObjects { asset, _, _ in
+                availableCandidateIdentifiers.insert(asset.localIdentifier)
+            }
+            let missingIdentifiers = candidateIdentifiers.subtracting(availableCandidateIdentifiers)
+            for identifier in missingIdentifiers { records.removeValue(forKey: identifier) }
+            newPairs = newPairs.filter { !$0.contains(any: missingIdentifiers) }
+        }
+        similarPairs.formUnion(newPairs)
+        groups = await DuplicateSimilarityEngine.makeGroups(
+            pairs: similarPairs,
+            validIdentifiers: Set(records.keys)
+        )
+        updateCounts()
+        persist()
+    }
+
+    private func requestSmallImage(
         for asset: PHAsset,
-        manager: PHCachingImageManager,
-        targetSize: CGSize
+        manager: PHCachingImageManager
     ) async -> UIImage? {
         await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
-            options.deliveryMode = .highQualityFormat
+            options.deliveryMode = .fastFormat
             options.resizeMode = .fast
             options.version = .current
-            options.isNetworkAccessAllowed = true
+            options.isNetworkAccessAllowed = false
             manager.requestImage(
                 for: asset,
-                targetSize: targetSize,
+                targetSize: CGSize(width: 48, height: 48),
                 contentMode: .aspectFit,
                 options: options
-            ) { image, info in
-                if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
+            ) { image, _ in
                 continuation.resume(returning: image)
             }
         }
     }
 
-    private func libraryFingerprint(for assets: [PHAsset]) -> String {
-        var hash: UInt64 = 14_695_981_039_346_656_037
-        for asset in assets.sorted(by: { $0.localIdentifier < $1.localIdentifier }) {
-            for byte in asset.localIdentifier.utf8 {
-                hash ^= UInt64(byte)
-                hash &*= 1_099_511_628_211
-            }
-            let modification = UInt64(asset.modificationDate?.timeIntervalSince1970 ?? 0)
-            hash ^= modification
-            hash &*= 1_099_511_628_211
-        }
-        return "v2|\(assets.count)|\(String(hash, radix: 16))"
-    }
-
-    private func persist(
-        fingerprint: String,
-        groups: [DuplicatePhotoGroup],
-        lightweightRecords: [LightweightRecord]
-    ) {
-        guard let data = try? JSONEncoder().encode(
-            Cache(
-                libraryFingerprint: fingerprint,
-                groups: groups,
-                lightweightRecords: lightweightRecords
-            )
-        ) else { return }
-        defaults.set(data, forKey: cacheKey)
-    }
-
-    private static func differenceHash(for image: UIImage) -> UInt64? {
-        guard let cgImage = image.cgImage else { return nil }
-        let width = 9
-        let height = 8
-        var pixels = [UInt8](repeating: 0, count: width * height)
-        guard let context = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
-        context.interpolationQuality = .low
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        var hash: UInt64 = 0
-        var bit: UInt64 = 1
-        for row in 0..<height {
-            for column in 0..<(width - 1) {
-                if pixels[row * width + column] > pixels[row * width + column + 1] {
-                    hash |= bit
-                }
-                bit <<= 1
-            }
-        }
-        return hash
-    }
-
-    private nonisolated static func makeCandidatePairs(
-        _ records: [LightweightRecord]
-    ) async -> Set<CandidatePair> {
-        await Task.detached(priority: .utility) {
-            guard records.count > 1 else { return [] }
-            var pairs: Set<CandidatePair> = []
-            var buckets: [HashBand: [Int]] = [:]
-
-            // Four hash bands keep candidate lookup close to O(n), rather than all-pairs O(n²).
-            for index in records.indices {
-                let record = records[index]
-                for bandIndex in 0..<4 {
-                    let value = UInt16(truncatingIfNeeded: record.differenceHash >> (bandIndex * 16))
-                    let key = HashBand(index: bandIndex, value: value)
-                    for otherIndex in buckets[key, default: []].suffix(80) {
-                        let other = records[otherIndex]
-                        guard compatibleAspectRatios(record, other),
-                              (record.differenceHash ^ other.differenceHash).nonzeroBitCount <= 10 else {
-                            continue
-                        }
-                        pairs.insert(CandidatePair(record.identifier, other.identifier))
-                    }
-                    buckets[key, default: []].append(index)
-                }
-            }
-
-            // Nearby captures and burst sequences survive small framing changes.
-            let dated = records.indices.compactMap { index -> (Int, TimeInterval)? in
-                guard let timestamp = records[index].creationTimestamp else { return nil }
-                return (index, timestamp)
-            }.sorted { $0.1 < $1.1 }
-            for position in dated.indices {
-                let left = records[dated[position].0]
-                let upperBound = min(position + 25, dated.count)
-                guard position + 1 < upperBound else { continue }
-                for nextPosition in (position + 1)..<upperBound {
-                    let delta = dated[nextPosition].1 - dated[position].1
-                    if delta > 20 * 60 { break }
-                    let right = records[dated[nextPosition].0]
-                    guard compatibleAspectRatios(left, right),
-                          (left.differenceHash ^ right.differenceHash).nonzeroBitCount <= 18 else {
-                        continue
-                    }
-                    pairs.insert(CandidatePair(left.identifier, right.identifier))
-                }
-            }
-
-            let bursts = Dictionary(grouping: records.filter { $0.burstIdentifier != nil }) {
-                $0.burstIdentifier!
-            }
-            for burst in bursts.values where burst.count > 1 {
-                for leftIndex in 0..<(burst.count - 1) {
-                    for rightIndex in (leftIndex + 1)..<burst.count {
-                        pairs.insert(CandidatePair(burst[leftIndex].identifier, burst[rightIndex].identifier))
-                    }
-                }
-            }
-            return pairs
-        }.value
-    }
-
-    private nonisolated static func compatibleAspectRatios(
-        _ left: LightweightRecord,
-        _ right: LightweightRecord
-    ) -> Bool {
-        guard left.pixelHeight > 0, right.pixelHeight > 0 else { return false }
-        let leftRatio = Double(left.pixelWidth) / Double(left.pixelHeight)
-        let rightRatio = Double(right.pixelWidth) / Double(right.pixelHeight)
-        return abs(leftRatio - rightRatio) <= 0.1
-    }
-
-    private nonisolated static func makeFeaturePrint(
-        cgImage: CGImage,
-        orientation: CGImagePropertyOrientation
-    ) async -> Data? {
-        await Task.detached(priority: .utility) {
-            let request = VNGenerateImageFeaturePrintRequest()
-            request.imageCropAndScaleOption = .scaleFit
-            let handler = VNImageRequestHandler(
-                cgImage: cgImage,
-                orientation: orientation,
-                options: [:]
-            )
+    private func persist() {
+        cacheRevision &+= 1
+        let revision = cacheRevision
+        let cache = Cache(
+            version: 2,
+            records: Array(records.values),
+            pairs: Array(similarPairs),
+            groups: groups
+        )
+        let url = cacheURL
+        Task {
             do {
-                try handler.perform([request])
-                guard let observation = request.results?.first else { return nil }
-                return try NSKeyedArchiver.archivedData(
-                    withRootObject: observation,
-                    requiringSecureCoding: true
-                )
+                try await cacheWriter.write(cache, revision: revision, to: url)
             } catch {
-                return nil
+                errorMessage = "解析結果を保存できませんでした。次回、もう一度写真を確認します。"
             }
-        }.value
+        }
     }
 
-    private nonisolated static func groupSimilarPhotos(
-        _ descriptors: [FeatureDescriptor],
-        candidatePairs: Set<CandidatePair>
-    ) async -> [DuplicatePhotoGroup] {
-        await Task.detached(priority: .utility) {
-            guard descriptors.count > 1 else { return [] }
-            let indexByIdentifier = Dictionary(
-                uniqueKeysWithValues: descriptors.enumerated().map { ($0.element.identifier, $0.offset) }
+    private func ensureCacheLoaded() async {
+        guard !didLoadCache else { return }
+        let loaded = await cacheLoadTask?.value
+        cacheLoadTask = nil
+        didLoadCache = true
+        guard let loaded else {
+            updateCounts()
+            return
+        }
+        records = loaded.records
+        similarPairs = loaded.pairs
+        groups = loaded.groups
+        updateCounts()
+    }
+
+    private func updateCounts() {
+        indexedCount = records.count
+        unavailableCount = records.values.filter { !$0.isAvailable }.count
+    }
+
+    private nonisolated static func signature(for image: UIImage) async -> Signature? {
+        guard let cgImage = image.cgImage else { return nil }
+        return await Task.detached(priority: .utility) {
+            let width = 9
+            let height = 8
+            let bytesPerPixel = 4
+            var pixels = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+            guard let context = CGContext(
+                data: &pixels,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * bytesPerPixel,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            context.interpolationQuality = .low
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+            var hash: UInt64 = 0
+            var bit: UInt64 = 1
+            var redTotal = 0
+            var greenTotal = 0
+            var blueTotal = 0
+            for row in 0..<height {
+                for column in 0..<width {
+                    let offset = (row * width + column) * bytesPerPixel
+                    redTotal += Int(pixels[offset])
+                    greenTotal += Int(pixels[offset + 1])
+                    blueTotal += Int(pixels[offset + 2])
+                    guard column < width - 1 else { continue }
+                    let nextOffset = offset + bytesPerPixel
+                    let luminance = Int(pixels[offset]) * 30 + Int(pixels[offset + 1]) * 59 + Int(pixels[offset + 2]) * 11
+                    let nextLuminance = Int(pixels[nextOffset]) * 30 + Int(pixels[nextOffset + 1]) * 59 + Int(pixels[nextOffset + 2]) * 11
+                    if luminance > nextLuminance { hash |= bit }
+                    bit <<= 1
+                }
+            }
+            let count = width * height
+            return Signature(
+                differenceHash: hash,
+                averageRed: UInt8(redTotal / count),
+                averageGreen: UInt8(greenTotal / count),
+                averageBlue: UInt8(blueTotal / count)
             )
-            let observations: [VNFeaturePrintObservation?] = descriptors.map {
-                try? NSKeyedUnarchiver.unarchivedObject(
-                    ofClass: VNFeaturePrintObservation.self,
-                    from: $0.archivedObservation
-                )
-            }
-            var unionFind = UnionFind(count: descriptors.count)
-
-            for pair in candidatePairs {
-                guard let leftIndex = indexByIdentifier[pair.leftIdentifier],
-                      let rightIndex = indexByIdentifier[pair.rightIdentifier],
-                      let leftObservation = observations[leftIndex],
-                      let rightObservation = observations[rightIndex] else { continue }
-                var distance: Float = 0
-                do {
-                    try leftObservation.computeDistance(&distance, to: rightObservation)
-                    if distance <= 8.0 { unionFind.union(leftIndex, rightIndex) }
-                } catch {
-                    continue
-                }
-            }
-
-            var identifiersByRoot: [Int: [String]] = [:]
-            for index in descriptors.indices {
-                identifiersByRoot[unionFind.find(index), default: []]
-                    .append(descriptors[index].identifier)
-            }
-            return identifiersByRoot.values
-                .filter { $0.count >= 2 }
-                .map(DuplicatePhotoGroup.init(assetIdentifiers:))
-                .sorted {
-                    if $0.count == $1.count { return $0.id < $1.id }
-                    return $0.count > $1.count
-                }
         }.value
     }
 
-    private nonisolated static func cgOrientation(
-        from orientation: UIImage.Orientation
-    ) -> CGImagePropertyOrientation {
-        switch orientation {
-        case .up: return .up
-        case .upMirrored: return .upMirrored
-        case .down: return .down
-        case .downMirrored: return .downMirrored
-        case .left: return .left
-        case .leftMirrored: return .leftMirrored
-        case .right: return .right
-        case .rightMirrored: return .rightMirrored
-        @unknown default: return .up
+    private nonisolated static func loadState(
+        cacheURL: URL
+    ) -> LoadedState? {
+        if let data = try? Data(contentsOf: cacheURL),
+           let cache = try? PropertyListDecoder().decode(Cache.self, from: data),
+           cache.version == 2 {
+            return LoadedState(
+                records: Dictionary(uniqueKeysWithValues: cache.records.map { ($0.identifier, $0) }),
+                pairs: Set(cache.pairs),
+                groups: cache.groups
+            )
         }
-    }
-}
-
-private struct UnionFind {
-    private var parents: [Int]
-    private var ranks: [Int]
-
-    init(count: Int) {
-        parents = Array(0..<count)
-        ranks = Array(repeating: 0, count: count)
+        return nil
     }
 
-    mutating func find(_ value: Int) -> Int {
-        if parents[value] != value { parents[value] = find(parents[value]) }
-        return parents[value]
-    }
-
-    mutating func union(_ left: Int, _ right: Int) {
-        let leftRoot = find(left)
-        let rightRoot = find(right)
-        guard leftRoot != rightRoot else { return }
-        if ranks[leftRoot] < ranks[rightRoot] {
-            parents[leftRoot] = rightRoot
-        } else if ranks[leftRoot] > ranks[rightRoot] {
-            parents[rightRoot] = leftRoot
-        } else {
-            parents[rightRoot] = leftRoot
-            ranks[leftRoot] += 1
-        }
+    private static func defaultCacheURL() -> URL {
+        let directory = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0].appendingPathComponent("Swipee", isDirectory: true)
+        return directory.appendingPathComponent("duplicate-analysis.plist")
     }
 }

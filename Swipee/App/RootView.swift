@@ -13,9 +13,13 @@ struct RootView: View {
     init() {
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(named: "SwipeeBackground") ?? .systemBackground
-        appearance.stackedItemPositioning = .fill
-        appearance.stackedItemSpacing = 0
+        appearance.backgroundColor = .systemBackground
+        appearance.selectionIndicatorImage = Self.selectionIndicatorImage()
+        appearance.selectionIndicatorTintColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor.white.withAlphaComponent(0.16)
+                : UIColor.black.withAlphaComponent(0.08)
+        }
 
         let itemAppearances = [
             appearance.stackedLayoutAppearance,
@@ -23,22 +27,25 @@ struct RootView: View {
             appearance.compactInlineLayoutAppearance
         ]
         for itemAppearance in itemAppearances {
-            itemAppearance.normal.iconColor = .label
-            itemAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.label]
+            itemAppearance.normal.iconColor = .secondaryLabel
+            itemAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.secondaryLabel]
             itemAppearance.selected.iconColor = .label
             itemAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.label]
         }
 
         let tabBarAppearance = UITabBar.appearance()
-        tabBarAppearance.itemPositioning = .fill
-        tabBarAppearance.itemSpacing = 0
         tabBarAppearance.standardAppearance = appearance
         tabBarAppearance.scrollEdgeAppearance = appearance
+        tabBarAppearance.tintColor = .label
+        tabBarAppearance.unselectedItemTintColor = .secondaryLabel
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack { OrganizeView() }
+                .toolbarBackground(Color(red: 0.043, green: 0.043, blue: 0.051), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarColorScheme(.dark, for: .tabBar)
                 .tabItem {
                     Label(
                         "整理",
@@ -48,6 +55,9 @@ struct RootView: View {
                 .tag(AppTab.organize)
 
             NavigationStack { DuplicatesView() }
+                .toolbarBackground(Color.swipeeBackground, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label(
                         "重複",
@@ -57,6 +67,9 @@ struct RootView: View {
                 .tag(AppTab.duplicates)
 
             NavigationStack { SettingsView() }
+                .toolbarBackground(Color.swipeeBackground, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label(
                         "設定",
@@ -65,8 +78,16 @@ struct RootView: View {
                 }
                 .tag(AppTab.settings)
         }
-        .toolbarBackground(Color.swipeeBackground, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
+    }
+
+    private static func selectionIndicatorImage() -> UIImage {
+        let size = CGSize(width: 92, height: 46)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in
+            UIColor.white.setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2).fill()
+        }
+        .withRenderingMode(.alwaysTemplate)
     }
 }
 
