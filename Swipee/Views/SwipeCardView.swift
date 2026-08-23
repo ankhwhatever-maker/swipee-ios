@@ -93,7 +93,7 @@ struct SwipeCardView: View {
                     }
                 }
                 .padding(.trailing, 4)
-                .padding(.bottom, 184)
+                .padding(.bottom, 160)
             }
 
             if asset.mediaType == .video, showsSideActions {
@@ -209,6 +209,7 @@ struct SwipeCardView: View {
 
             videoSeekBar(refreshDate: refreshDate)
         }
+        .padding(.bottom, 10)
     }
 
     private func videoSeekBar(refreshDate: Date) -> some View {
@@ -230,7 +231,7 @@ struct SwipeCardView: View {
                     }
             )
         }
-        .frame(width: maximumSize.width + 20, height: 4)
+        .frame(width: max(maximumSize.width - 4, 0), height: 4)
         .accessibilityLabel("再生位置")
         .accessibilityValue("\(Int(progress * 100))パーセント")
         .accessibilityAdjustableAction { direction in

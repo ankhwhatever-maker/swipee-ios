@@ -82,12 +82,17 @@ struct ReviewSessionFlowView: View {
                     .padding(.bottom, 96)
                 }
             }
-            .navigationTitle("今回の確認")
+            .navigationTitle("整理内容の確認")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("仕分けに戻る") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
                         .disabled(isDeleting)
+                        .accessibilityLabel("仕分けに戻る")
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -169,7 +174,7 @@ struct ReviewSessionFlowView: View {
 
     private var actionButtonTitle: String {
         if isDeleting { return "削除しています…" }
-        if session.deletionCount == 0 { return "今回はここまで" }
+        if session.deletionCount == 0 { return "OK" }
         return "\(session.deletionCount)枚を削除"
     }
 

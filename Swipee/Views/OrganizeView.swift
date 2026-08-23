@@ -237,13 +237,12 @@ struct OrganizeView: View {
                 .buttonStyle(.borderedProminent)
             }
             Button("表示する写真を変更") { showingFilters = true }.buttonStyle(.borderedProminent)
-            Button("またあとで") { }.foregroundStyle(.secondary)
         }
     }
 
     private var sessionReadyState: some View {
         ContentUnavailableView {
-            Label("10枚見ました", systemImage: "photo.stack")
+            Label("\(ReviewSessionStore.targetCount)枚見ました", systemImage: "photo.stack")
         } description: {
             Text("削除する写真を確認して、今回の整理を終えましょう。")
         } actions: {
@@ -252,7 +251,7 @@ struct OrganizeView: View {
                     undoLastAction()
                 }
             }
-            Button("今回の10枚を確認") {
+            Button("今回の\(ReviewSessionStore.targetCount)枚を確認") {
                 showingSessionReview = true
             }
             .buttonStyle(.borderedProminent)

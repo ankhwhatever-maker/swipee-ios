@@ -3,9 +3,11 @@ import Foundation
 @MainActor
 final class DuplicateSessionStore: ObservableObject {
     @Published private(set) var sessions: [String: [ReviewSessionItem]]
+    @Published private(set) var completedCounts: [String: Int]
 
     private let defaults: UserDefaults
     private let key = "duplicateReviewSessions.v1"
+    private let completedCountsKey = "duplicateReviewCompletedCounts.v1"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -15,10 +17,27 @@ final class DuplicateSessionStore: ObservableObject {
         } else {
             sessions = [:]
         }
+        if let data = defaults.data(forKey: completedCountsKey),
+           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
+            completedCounts = decoded
+        } else {
+            completedCounts = [:]
+        }
     }
 
     func items(for groupIdentifier: String) -> [ReviewSessionItem] {
         sessions[groupIdentifier] ?? []
+    }
+
+    func completedCount(for groupIdentifier: String) -> Int {
+        min(completedCounts[groupIdentifier] ?? 0, sessions[groupIdentifier]?.count ?? 0)
+    }
+
+    func markCurrentBatchCompleted(groupIdentifier: String, itemCount: Int) {
+        let sessionCount = sessions[groupIdentifier]?.count ?? 0
+        let nextCount = completedCount(for: groupIdentifier) + max(itemCount, 0)
+        completedCounts[groupIdentifier] = min(nextCount, sessionCount)
+        persist()
     }
 
     func append(
@@ -68,12 +87,17 @@ final class DuplicateSessionStore: ObservableObject {
     }
 
     func clear(groupIdentifier: String) {
-        guard sessions.removeValue(forKey: groupIdentifier) != nil else { return }
+        let removedSession = sessions.removeValue(forKey: groupIdentifier) != nil
+        let removedCount = completedCounts.removeValue(forKey: groupIdentifier) != nil
+        guard removedSession || removedCount else { return }
         persist()
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(sessions) else { return }
         defaults.set(data, forKey: key)
+        if let completedData = try? JSONEncoder().encode(completedCounts) {
+            defaults.set(completedData, forKey: completedCountsKey)
+        }
     }
 }

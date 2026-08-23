@@ -24,7 +24,16 @@ struct PhotoFilterView: View {
         }
         .navigationTitle("表示する写真")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { dismiss() } label: {
+                    Image(systemName: "checkmark")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("完了")
+            }
+        }
     }
 
     private func mediaRow(_ kind: CandidateMediaKind) -> some View {

@@ -10,12 +10,12 @@ struct SessionResultView: View {
             Color(red: 0.075, green: 0.067, blue: 0.063).ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack {
-                    Spacer()
                     Button(action: onClose) {
                         Image(systemName: "xmark").font(.title.bold()).frame(width: 52, height: 52)
                     }
                     .foregroundStyle(.white)
                     .accessibilityLabel("閉じる")
+                    Spacer()
                 }
                 Spacer(minLength: 36)
                 Text("今回の整理").font(.title2.bold())
@@ -41,15 +41,11 @@ struct SessionResultView: View {
                     .padding(.top, 10)
                 Spacer(minLength: 36)
                 Button(action: onContinue) {
-                    Text("もう10枚見る").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 18)
+                    Text("もう\(ReviewSessionStore.targetCount)枚見る").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 18)
                         .background(.white.opacity(0.14), in: Capsule())
                 }
                 .foregroundStyle(.white)
-                Button("またあとで", action: onClose)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.white.opacity(0.72))
-                    .padding(.top, 18)
-                    .padding(.bottom, 10)
+                .padding(.bottom, 10)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 28)

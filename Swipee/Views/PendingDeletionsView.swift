@@ -55,7 +55,12 @@ struct PendingDeletionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("閉じる") { dismiss() }
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("閉じる")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if !pendingDeletions.records.isEmpty {

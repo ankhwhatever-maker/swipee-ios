@@ -16,6 +16,8 @@ struct DuplicateGroupReviewView: View {
     @Environment(\.dismiss) private var dismiss
 
     let group: DuplicatePhotoGroup
+    let batchAssetIdentifiers: [String]
+    let isFinalBatch: Bool
     let onFinished: () -> Void
 
     @State private var assets: [PHAsset] = []
@@ -24,7 +26,10 @@ struct DuplicateGroupReviewView: View {
     @State private var errorMessage: String?
 
     private var items: [ReviewSessionItem] {
-        duplicateSessions.items(for: group.id)
+        let itemsByIdentifier = Dictionary(
+            uniqueKeysWithValues: duplicateSessions.items(for: group.id).map { ($0.assetIdentifier, $0) }
+        )
+        return batchAssetIdentifiers.compactMap { itemsByIdentifier[$0] }
     }
 
     private var deletionCount: Int {
@@ -38,7 +43,11 @@ struct DuplicateGroupReviewView: View {
     var body: some View {
         Group {
             if let result {
-                DuplicateResultView(result: result, onFinished: onFinished)
+                DuplicateResultView(
+                    result: result,
+                    continuesCurrentGroup: !isFinalBatch,
+                    onFinished: onFinished
+                )
             } else {
                 reviewScreen
             }
@@ -92,12 +101,17 @@ struct DuplicateGroupReviewView: View {
                     .padding(.bottom, 96)
                 }
             }
-            .navigationTitle("削除前の確認")
+            .navigationTitle("重複内容の確認")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("仕分けに戻る") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
                         .disabled(isDeleting)
+                        .accessibilityLabel("仕分けに戻る")
                 }
             }
             .safeAreaInset(edge: .bottom) { actionArea }
@@ -173,12 +187,12 @@ struct DuplicateGroupReviewView: View {
 
     private var actionButtonTitle: String {
         if isDeleting { return "削除しています…" }
-        if deletionCount == 0 { return "このグループは削除しない" }
+        if deletionCount == 0 { return "OK" }
         return "\(deletionCount)枚を削除"
     }
 
     private func loadAssets() {
-        assets = library.fetchAssets(localIdentifiers: items.map(\.assetIdentifier))
+        assets = library.fetchAssets(localIdentifiers: batchAssetIdentifiers)
     }
 
     private func toggleDeletion(for asset: PHAsset, currentDecision: SwipeDecision) {
@@ -227,8 +241,15 @@ struct DuplicateGroupReviewView: View {
 
                 let deleted = deletionItems.count
                 reviewSession.recordDeleted(count: deleted)
-                reviewedGroups.markReviewed(group.id)
-                duplicateSessions.clear(groupIdentifier: group.id)
+                if isFinalBatch {
+                    reviewedGroups.markReviewed(group.id)
+                    duplicateSessions.clear(groupIdentifier: group.id)
+                } else {
+                    duplicateSessions.markCurrentBatchCompleted(
+                        groupIdentifier: group.id,
+                        itemCount: snapshot.count
+                    )
+                }
                 result = DuplicateGroupResult(
                     keptCount: snapshot.count - deleted,
                     deletedCount: deleted,

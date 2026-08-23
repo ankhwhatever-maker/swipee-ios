@@ -19,10 +19,14 @@ struct DuplicateGroupSwipeView: View {
     @State private var activeSwipeDecision: SwipeDecision?
     @State private var showingReview = false
     @State private var reviewFinished = false
+    @State private var reviewingAssetIdentifiers: [String] = []
+    @State private var reviewingFinalBatch = false
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
     @State private var cachedAssets: [PHAsset] = []
     private let actionOverlayHeight: CGFloat = 76
+    private let thumbnailStripHeight: CGFloat = 82
+    private let batchSize = 10
 
     private struct RestoringCard {
         let asset: PHAsset
@@ -38,12 +42,22 @@ struct DuplicateGroupSwipeView: View {
         return assets.filter { !reviewedIdentifiers.contains($0.localIdentifier) }
     }
 
+    private var currentBatchItems: [ReviewSessionItem] {
+        let completedCount = duplicateSessions.completedCount(for: group.id)
+        return Array(items.dropFirst(completedCount).prefix(batchSize))
+    }
+
+    private var shouldReviewCurrentBatch: Bool {
+        !currentBatchItems.isEmpty
+            && (currentBatchItems.count >= batchSize || remainingAssets.isEmpty)
+    }
+
     var body: some View {
         ZStack {
-            Color.swipeeBackground.ignoresSafeArea()
+            Color(red: 0.043, green: 0.043, blue: 0.051).ignoresSafeArea()
             if assets.isEmpty {
-                ProgressView()
-            } else if remainingAssets.isEmpty {
+                ProgressView().tint(.white)
+            } else if shouldReviewCurrentBatch {
                 readyState
             } else {
                 deck
@@ -51,17 +65,18 @@ struct DuplicateGroupSwipeView: View {
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
-        .navigationTitle("重複候補")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .task {
             assets = library.fetchAssets(localIdentifiers: group.assetIdentifiers)
             updateImageCache()
-            if !assets.isEmpty, remainingAssets.isEmpty { showingReview = true }
+            if shouldReviewCurrentBatch { prepareReview() }
         }
         .onDisappear { stopImageCache() }
         .fullScreenCover(isPresented: $showingReview, onDismiss: {
-            if reviewFinished {
+            guard reviewFinished else { return }
+            reviewFinished = false
+            if reviewingFinalBatch {
                 dismiss()
                 Task {
                     await analysis.analyzeIfNeeded(
@@ -69,9 +84,17 @@ struct DuplicateGroupSwipeView: View {
                         pendingDeletions: pendingDeletions
                     )
                 }
+            } else {
+                reviewingAssetIdentifiers = []
+                reviewingFinalBatch = false
+                updateImageCache()
             }
         }) {
-            DuplicateGroupReviewView(group: group) {
+            DuplicateGroupReviewView(
+                group: group,
+                batchAssetIdentifiers: reviewingAssetIdentifiers,
+                isFinalBatch: reviewingFinalBatch
+            ) {
                 reviewFinished = true
                 showingReview = false
             }
@@ -87,7 +110,9 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private var deck: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
+            deckHeader
+
             GeometryReader { proxy in
                 ZStack {
                     if let asset = remainingAssets.first {
@@ -100,7 +125,7 @@ struct DuplicateGroupSwipeView: View {
                             isInteractive: !processing && restoration == nil,
                             allowsNetworkAccess: true,
                             maximumSize: proxy.size,
-                            metadataBottomInset: actionOverlayHeight,
+                            metadataBottomInset: 0,
                             requestedDecision: $requestedDecision,
                             activeSwipeDecision: $activeSwipeDecision
                         ) { isFavorite in
@@ -117,9 +142,71 @@ struct DuplicateGroupSwipeView: View {
                     }
                 }
             }
-            .overlay(alignment: .top) { progressPill.padding(.top, 12) }
-            .overlay(alignment: .bottom) { actionControls.padding(.vertical, 4) }
+
+            actionControls
+                .frame(height: actionOverlayHeight)
+
+            thumbnailStrip
+                .frame(height: thumbnailStripHeight)
         }
+    }
+
+    private var deckHeader: some View {
+        ZStack {
+            progressPill
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .foregroundStyle(.white)
+                .accessibilityLabel("重複候補へ戻る")
+                Spacer()
+            }
+        }
+        .frame(height: 58)
+        .padding(.horizontal, 4)
+    }
+
+    private var comparisonAssets: [PHAsset] {
+        guard let currentIdentifier = remainingAssets.first?.localIdentifier else { return [] }
+        return Array(
+            remainingAssets.lazy
+                .filter { $0.localIdentifier != currentIdentifier }
+                .prefix(10)
+        )
+    }
+
+    private var thumbnailStrip: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(comparisonAssets, id: \.localIdentifier) { asset in
+                    AssetImageView(
+                        asset: asset,
+                        manager: library.imageManager,
+                        displayMode: .fill,
+                        allowsNetworkAccess: false
+                    )
+                    .frame(width: 58, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(.white.opacity(0.24), lineWidth: 1)
+                    }
+                    .accessibilityLabel("同じグループの写真")
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 10)
+        }
+        .scrollIndicators(.hidden)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.12))
+                .frame(height: 1)
+        }
+        .accessibilityLabel("同じグループの写真、最大10枚")
     }
 
     private var actionControls: some View {
@@ -143,27 +230,32 @@ struct DuplicateGroupSwipeView: View {
 
     private var readyState: some View {
         ContentUnavailableView {
-            Label("このグループをすべて見ました", systemImage: "square.on.square")
+            Label("この\(currentBatchItems.count)枚を見ました", systemImage: "square.on.square")
         } description: {
             Text("削除する写真を最後に確認できます。")
         } actions: {
             if canUndo {
                 Button("直前の操作を戻す") { undoLastAction() }
             }
-            Button("\(group.count)枚を確認") { showingReview = true }
+            Button("\(currentBatchItems.count)枚を確認") { prepareReview() }
                 .buttonStyle(.borderedProminent)
         }
+        .foregroundStyle(.white)
     }
 
     private var progressPill: some View {
-        Text("\(min(items.count + 1, group.count)) / \(group.count)")
+        Text("\(min(currentBatchItems.count + 1, batchTargetCount)) / \(batchTargetCount)")
             .font(.caption.bold().monospacedDigit())
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(Color.swipeePhotoOverlay, in: Capsule())
             .overlay { Capsule().stroke(.white.opacity(0.22)) }
-            .accessibilityLabel("重複候補、\(group.count)枚中\(min(items.count + 1, group.count))枚目")
+            .accessibilityLabel("今回の重複整理、\(batchTargetCount)枚中\(min(currentBatchItems.count + 1, batchTargetCount))枚目")
+    }
+
+    private var batchTargetCount: Int {
+        min(batchSize, currentBatchItems.count + remainingAssets.count)
     }
 
     private var undoButton: some View {
@@ -171,12 +263,11 @@ struct DuplicateGroupSwipeView: View {
             Image(systemName: "arrow.uturn.backward")
                 .font(.subheadline.bold())
                 .frame(width: 34, height: 34)
-                .background(Color.swipeeElevatedSurface, in: Circle())
-                .overlay { Circle().stroke(Color.swipeeBorder) }
-                .shadow(color: .black.opacity(colorScheme == .light && canUndo ? 0.08 : 0), radius: 5, y: 2)
+                .background(.white.opacity(0.12), in: Circle())
+                .overlay { Circle().stroke(.white.opacity(0.2)) }
                 .frame(width: 44, height: 44)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.white.opacity(0.82))
         .opacity(canUndo ? 1 : 0.28)
         .disabled(processing || !canUndo)
         .accessibilityLabel("直前の操作を戻す")
@@ -193,10 +284,9 @@ struct DuplicateGroupSwipeView: View {
             Image(systemName: icon)
                 .font(.title2.bold())
                 .frame(width: 58, height: 58)
-                .background(Color.swipeeElevatedSurface, in: Circle())
-                .overlay { Circle().stroke(Color.swipeeBorder) }
+                .background(.white.opacity(0.12), in: Circle())
+                .overlay { Circle().stroke(.white.opacity(0.2)) }
                 .foregroundStyle(color)
-                .shadow(color: .black.opacity(colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
         }
         .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
         .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
@@ -226,7 +316,7 @@ struct DuplicateGroupSwipeView: View {
             }
             updateImageCache()
             processing = false
-            if remainingAssets.isEmpty { showingReview = true }
+            if shouldReviewCurrentBatch { prepareReview() }
             return true
         } catch {
             library.errorMessage = error.localizedDescription
@@ -246,7 +336,7 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private var canUndo: Bool {
-        guard let action = items.last else { return false }
+        guard let action = currentBatchItems.last else { return false }
         if action.decision == .trash {
             return pendingDeletions.contains(assetIdentifier: action.assetIdentifier)
         }
@@ -254,7 +344,7 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private func undoLastAction() {
-        guard !processing, let action = items.last else { return }
+        guard !processing, let action = currentBatchItems.last else { return }
         processing = true
         Task {
             let originalDecision = action.originalDecision ?? action.decision
@@ -283,6 +373,13 @@ struct DuplicateGroupSwipeView: View {
             }
             processing = false
         }
+    }
+
+    private func prepareReview() {
+        guard !showingReview, !currentBatchItems.isEmpty else { return }
+        reviewingAssetIdentifiers = currentBatchItems.map(\.assetIdentifier)
+        reviewingFinalBatch = remainingAssets.isEmpty
+        showingReview = true
     }
 
     private func restore(_ asset: PHAsset, from decision: SwipeDecision) async {
