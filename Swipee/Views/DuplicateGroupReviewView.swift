@@ -177,7 +177,7 @@ struct DuplicateGroupReviewView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)
-            .tint(deletionCount > 0 ? Color.swipeeDelete : Color.primary)
+            .tint(deletionCount > 0 ? Color.swipeeDestructive : Color.primary)
             .disabled(isDeleting || assets.isEmpty)
         }
         .padding(.horizontal, 18)

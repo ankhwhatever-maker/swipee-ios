@@ -82,7 +82,7 @@ struct PendingDeletionsView: View {
                     .padding(.vertical, 14)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.swipeeDelete)
+                .tint(.swipeeDestructive)
                 .disabled(isDeleting)
                 .padding()
                 .background(.bar)

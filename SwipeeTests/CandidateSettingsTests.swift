@@ -9,6 +9,7 @@ final class CandidateSettingsTests: XCTestCase {
         XCTAssertEqual(settings.mediaKinds, [.photo, .screenshot])
         XCTAssertFalse(settings.mediaKinds.contains(.video))
         XCTAssertTrue(settings.includesFavorites)
+        XCTAssertEqual(settings.dateMode, .recent)
     }
 
     func testConditionKeyIsIndependentOfSetOrder() {
@@ -43,5 +44,35 @@ final class CandidateSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.period, .threeMonths)
         XCTAssertEqual(decoded.mediaKinds, [.photo])
         XCTAssertTrue(decoded.includesFavorites)
+        XCTAssertEqual(decoded.dateMode, .recent)
+    }
+
+    func testCustomDateBoundsIncludeTheEntireEndDate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 4, day: 1)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 8, day: 31)))
+        let expectedEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 9, day: 1)))
+        let settings = CandidateSettings(
+            dateMode: .custom,
+            customStartDate: start,
+            customEndDate: end
+        )
+
+        let bounds = settings.dateBounds(calendar: calendar)
+
+        XCTAssertEqual(bounds.start, start)
+        XCTAssertEqual(bounds.endExclusive, expectedEnd)
+    }
+
+    func testCustomDatesArePartOfConditionKey() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let firstStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 4, day: 1)))
+        let secondStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 4, day: 2)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 8, day: 31)))
+
+        let first = CandidateSettings(dateMode: .custom, customStartDate: firstStart, customEndDate: end)
+        let second = CandidateSettings(dateMode: .custom, customStartDate: secondStart, customEndDate: end)
+
+        XCTAssertNotEqual(first.conditionKey, second.conditionKey)
     }
 }

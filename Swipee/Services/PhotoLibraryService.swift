@@ -55,8 +55,16 @@ final class PhotoLibraryService: ObservableObject {
         let next = await Task.detached(priority: .userInitiated) {
             let options = PHFetchOptions()
             options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            if let start = settings.period.startDate() {
-                options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
+            let bounds = settings.dateBounds()
+            var datePredicates: [NSPredicate] = []
+            if let start = bounds.start {
+                datePredicates.append(NSPredicate(format: "creationDate >= %@", start as NSDate))
+            }
+            if let end = bounds.endExclusive {
+                datePredicates.append(NSPredicate(format: "creationDate < %@", end as NSDate))
+            }
+            if !datePredicates.isEmpty {
+                options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: datePredicates)
             }
             let result = PHAsset.fetchAssets(with: options)
             var assets: [PHAsset] = []

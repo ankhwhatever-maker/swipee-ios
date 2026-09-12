@@ -29,7 +29,7 @@ struct SessionResultView: View {
                 Text(result.deletedCount == 0 ? "削除はありません" : "削除しました").font(.title2.bold())
                 HStack(spacing: 14) {
                     resultCard(count: result.keptCount, title: "キープ", icon: "checkmark", color: .swipeeKeep)
-                    resultCard(count: result.deletedCount, title: "削除", icon: "trash", color: .swipeeDelete)
+                    resultCard(count: result.deletedCount, title: "削除", icon: "trash", color: .swipeeDestructive)
                 }
                 .padding(.top, 48)
                 Text("累計 \(result.totalDeletedCount)枚を削除").font(.title3.bold()).padding(.top, 34)

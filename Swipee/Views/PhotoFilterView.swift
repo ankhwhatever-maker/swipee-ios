@@ -12,18 +12,40 @@ struct PhotoFilterView: View {
     var body: some View {
         Form {
             Section("期間") {
-                VStack(spacing: 20) {
-                    Text(selection.period.displayLabel).font(.largeTitle.bold()).frame(maxWidth: .infinity, alignment: .leading)
-                    Slider(value: Binding(get: { Double(selection.period.rawValue) }, set: { setPeriod(CandidatePeriod(rawValue: Int($0.rounded())) ?? .all) }), in: 0...4, step: 1)
-                        .tint(.primary)
-                        .accessibilityLabel("表示する期間")
-                        .accessibilityValue(selection.period.displayLabel)
-                    HStack {
-                        ForEach(CandidatePeriod.allCases) { period in
-                            Text(period.shortLabel).font(.caption2).fontWeight(selection.period == period ? .bold : .regular).foregroundStyle(selection.period == period ? Color.primary : Color.secondary).frame(maxWidth: .infinity)
-                        }
+                Picker("期間の指定方法", selection: dateModeBinding) {
+                    ForEach(CandidateDateMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
                     }
-                }.padding(.vertical, 8)
+                }
+                .pickerStyle(.segmented)
+
+                if selection.dateMode == .recent {
+                    VStack(spacing: 20) {
+                        Text(selection.period.displayLabel).font(.largeTitle.bold()).frame(maxWidth: .infinity, alignment: .leading)
+                        Slider(value: Binding(get: { Double(selection.period.rawValue) }, set: { setPeriod(CandidatePeriod(rawValue: Int($0.rounded())) ?? .all) }), in: 0...4, step: 1)
+                            .tint(.primary)
+                            .accessibilityLabel("表示する期間")
+                            .accessibilityValue(selection.period.displayLabel)
+                        HStack {
+                            ForEach(CandidatePeriod.allCases) { period in
+                                Text(period.shortLabel).font(.caption2).fontWeight(selection.period == period ? .bold : .regular).foregroundStyle(selection.period == period ? Color.primary : Color.secondary).frame(maxWidth: .infinity)
+                            }
+                        }
+                    }.padding(.vertical, 8)
+                } else {
+                    DatePicker(
+                        "開始日",
+                        selection: customStartDateBinding,
+                        in: ...customEndDate,
+                        displayedComponents: .date
+                    )
+                    DatePicker(
+                        "終了日",
+                        selection: customEndDateBinding,
+                        in: customStartDate...,
+                        displayedComponents: .date
+                    )
+                }
             }
             Section { ForEach(CandidateMediaKind.allCases) { kind in mediaRow(kind) } } header: { Text("種類") } footer: { Text("複数選択できます。チェックを押すと設定が保存されます。") }
             Section("お気に入り") {
@@ -79,6 +101,56 @@ struct PhotoFilterView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("お気に入りの写真を表示")
         .accessibilityValue(selection.includesFavorites ? "選択中" : "未選択")
+    }
+
+    private var dateModeBinding: Binding<CandidateDateMode> {
+        Binding(
+            get: { selection.dateMode },
+            set: { mode in
+                var updated = selection
+                updated.dateMode = mode
+                if mode == .custom {
+                    let calendar = Calendar.current
+                    let end = calendar.startOfDay(for: .now)
+                    updated.customEndDate = updated.customEndDate ?? end
+                    updated.customStartDate = updated.customStartDate
+                        ?? calendar.date(byAdding: .month, value: -1, to: end)
+                }
+                draft = updated
+            }
+        )
+    }
+
+    private var customStartDate: Date {
+        selection.customStartDate
+            ?? Calendar.current.date(byAdding: .month, value: -1, to: customEndDate)
+            ?? customEndDate
+    }
+
+    private var customEndDate: Date {
+        selection.customEndDate ?? Calendar.current.startOfDay(for: .now)
+    }
+
+    private var customStartDateBinding: Binding<Date> {
+        Binding(
+            get: { customStartDate },
+            set: { date in
+                var updated = selection
+                updated.customStartDate = Calendar.current.startOfDay(for: date)
+                draft = updated
+            }
+        )
+    }
+
+    private var customEndDateBinding: Binding<Date> {
+        Binding(
+            get: { customEndDate },
+            set: { date in
+                var updated = selection
+                updated.customEndDate = Calendar.current.startOfDay(for: date)
+                draft = updated
+            }
+        )
     }
 
     private func setPeriod(_ period: CandidatePeriod) {

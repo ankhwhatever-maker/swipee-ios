@@ -53,7 +53,7 @@ struct RootView: View {
                 .tag(AppTab.organize)
 
             NavigationStack { DuplicatesView() }
-                .toolbarBackground(Color.swipeeBackground, for: .tabBar)
+                .toolbarBackground(Color.swipeeSurface, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
@@ -63,7 +63,7 @@ struct RootView: View {
                 .tag(AppTab.duplicates)
 
             NavigationStack { SettingsView() }
-                .toolbarBackground(Color.swipeeBackground, for: .tabBar)
+                .toolbarBackground(Color.swipeeSurface, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
@@ -86,11 +86,12 @@ struct RootView: View {
 }
 
 extension Color {
-    static let swipeeBackground = Color("SwipeeBackground")
-    static let swipeeSurface = Color("SwipeeSurface")
-    static let swipeeElevatedSurface = Color("SwipeeElevatedSurface")
+    static let swipeeBackground = Color(uiColor: .systemGroupedBackground)
+    static let swipeeSurface = Color(uiColor: .secondarySystemGroupedBackground)
+    static let swipeeElevatedSurface = Color(uiColor: .secondarySystemGroupedBackground)
     static let swipeeBorder = Color("SwipeeBorder")
     static let swipeeDelete = Color("SwipeeDelete")
+    static let swipeeDestructive = Color(uiColor: .systemRed)
     static let swipeeFavorite = Color("SwipeeFavorite")
     static let swipeeKeep = Color("SwipeeKeep")
     static let swipeePhotoOverlay = Color("SwipeePhotoOverlay")
