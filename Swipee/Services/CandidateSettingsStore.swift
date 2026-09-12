@@ -15,6 +15,12 @@ final class CandidateSettingsStore: ObservableObject {
         }
     }
 
+    func set(_ settings: CandidateSettings) {
+        guard value != settings else { return }
+        value = settings
+        save()
+    }
+
     func setPeriod(_ period: CandidatePeriod) { value.period = period; save() }
     func setIncludesFavorites(_ includesFavorites: Bool) {
         value.includesFavorites = includesFavorites

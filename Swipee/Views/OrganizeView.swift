@@ -18,6 +18,7 @@ struct OrganizeView: View {
     @State private var activeSwipeDecision: SwipeDecision?
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
+    @State private var loadedConditionKey: String?
     private let actionOverlayHeight: CGFloat = 76
 
     private struct RestoringCard {
@@ -93,13 +94,19 @@ struct OrganizeView: View {
                     .padding(.trailing, 14)
             }
         }
-        .sheet(isPresented: $showingFilters) { NavigationStack { PhotoFilterView() } }
+        .sheet(isPresented: $showingFilters, onDismiss: {
+            Task { await reloadIfNeeded() }
+        }) { NavigationStack { PhotoFilterView() } }
         .fullScreenCover(isPresented: $showingSessionReview, onDismiss: {
             Task { await reload() }
         }) {
             ReviewSessionFlowView { }
         }
-        .task(id: settings.value.conditionKey) { await authorizeAndLoad() }
+        .task { await authorizeAndLoad() }
+        .onChange(of: settings.value.conditionKey) { _, _ in
+            guard !showingFilters else { return }
+            Task { await reloadIfNeeded() }
+        }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await reload() } } }
         .alert("操作を完了できませんでした", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(library.errorMessage ?? "") }
     }
@@ -310,11 +317,21 @@ struct OrganizeView: View {
         if session.isComplete { showingSessionReview = true }
     }
     private func reload() async {
+        let selectedSettings = settings.value
         await library.reload(
-            settings: settings.value,
+            settings: selectedSettings,
             history: history,
             pendingDeletions: pendingDeletions
         )
+        if settings.value.conditionKey == selectedSettings.conditionKey {
+            loadedConditionKey = selectedSettings.conditionKey
+        }
+    }
+
+    private func reloadIfNeeded() async {
+        guard library.authorizationStatus == .authorized || library.authorizationStatus == .limited else { return }
+        guard loadedConditionKey != settings.value.conditionKey else { return }
+        await reload()
     }
     private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
         guard !processing, library.candidates.first?.localIdentifier == asset.localIdentifier else { return false }
