@@ -74,6 +74,7 @@ struct SwipeCardView: View {
 
     private var interactiveArea: some View {
         ZStack {
+            swipeRevealBackground
             movingCard
 
             if showingMetadata {
@@ -343,9 +344,63 @@ struct SwipeCardView: View {
     private var styledCard: some View {
         cardMedia
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(alignment: stampAlignment) { stamp }
             .overlay { RoundedRectangle(cornerRadius: 26).stroke(Color.swipeeBorder, lineWidth: 1) }
             .shadow(color: .black.opacity(0.15), radius: 18, y: 9)
+    }
+
+    @ViewBuilder
+    private var swipeRevealBackground: some View {
+        if let presentation = swipeRevealPresentation {
+            HStack {
+                if presentation.decision == .trash { Spacer() }
+                VStack(spacing: 12) {
+                    Image(systemName: presentation.icon)
+                        .font(.system(size: 54, weight: .bold))
+                    Text(presentation.title)
+                        .font(.system(size: 36, weight: .black, design: .rounded))
+                }
+                .foregroundStyle(presentation.foregroundColor)
+                .scaleEffect(0.84 + swipeRevealProgress * 0.16)
+                .opacity(swipeRevealProgress)
+                .padding(.horizontal, 34)
+                if presentation.decision == .keep { Spacer() }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var swipeRevealProgress: CGFloat {
+        min(max((abs(offset.width) - 6) / 120, 0), 1)
+    }
+
+    private var swipeRevealPresentation: SwipeRevealPresentation? {
+        let decision: SwipeDecision?
+        if offset.width < -6 {
+            decision = .trash
+        } else if offset.width > 6 {
+            decision = .keep
+        } else {
+            decision = activeSwipeDecision
+        }
+
+        switch decision {
+        case .trash:
+            return SwipeRevealPresentation(
+                decision: .trash,
+                title: "削除",
+                icon: "trash.fill",
+                foregroundColor: Color(red: 0.70, green: 0.49, blue: 0.96)
+            )
+        case .keep:
+            return SwipeRevealPresentation(
+                decision: .keep,
+                title: "キープ",
+                icon: "hand.thumbsup.fill",
+                foregroundColor: Color(red: 0.43, green: 0.94, blue: 0.66)
+            )
+        default:
+            return nil
+        }
     }
 
     @ViewBuilder
@@ -480,17 +535,11 @@ struct SwipeCardView: View {
         }
     }
 
-    @ViewBuilder private var stamp: some View {
-        let data: (String, Color)? = {
-            if offset.width < -55 { return ("削除候補", .swipeeDelete) }
-            if offset.width > 55 { return ("キープ", .swipeeKeep) }
-            return nil
-        }()
-        if let data {
-            Text(data.0).font(.title2).fontWeight(.black).foregroundStyle(data.1).padding(.horizontal, 12).padding(.vertical, 7)
-                .background(Color.swipeePhotoOverlay, in: RoundedRectangle(cornerRadius: 8))
-                .overlay { RoundedRectangle(cornerRadius: 8).stroke(data.1, lineWidth: 4) }.rotationEffect(.degrees(-10)).padding(24)
-        }
-    }
-    private var stampAlignment: Alignment { offset.width < 0 ? .topTrailing : .topLeading }
+}
+
+private struct SwipeRevealPresentation {
+    let decision: SwipeDecision
+    let title: String
+    let icon: String
+    let foregroundColor: Color
 }

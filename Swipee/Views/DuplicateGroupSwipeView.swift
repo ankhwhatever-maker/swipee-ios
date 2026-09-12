@@ -52,9 +52,35 @@ struct DuplicateGroupSwipeView: View {
             && (currentBatchItems.count >= batchSize || remainingAssets.isEmpty)
     }
 
+    @ViewBuilder
+    private var deckBackground: some View {
+        switch activeSwipeDecision {
+        case .trash:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.05, blue: 0.12),
+                    Color(red: 0.24, green: 0.15, blue: 0.34)
+                ],
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
+            )
+        case .keep:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.10, blue: 0.06),
+                    Color(red: 0.10, green: 0.31, blue: 0.20)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        default:
+            Color(red: 0.043, green: 0.043, blue: 0.051)
+        }
+    }
+
     var body: some View {
         ZStack {
-            Color(red: 0.043, green: 0.043, blue: 0.051).ignoresSafeArea()
+            deckBackground.ignoresSafeArea()
             if assets.isEmpty {
                 ProgressView().tint(.white)
             } else if shouldReviewCurrentBatch {
@@ -63,6 +89,7 @@ struct DuplicateGroupSwipeView: View {
                 deck
             }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
         .toolbar(.hidden, for: .navigationBar)
