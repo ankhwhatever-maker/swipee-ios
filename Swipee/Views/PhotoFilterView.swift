@@ -21,6 +21,15 @@ struct PhotoFilterView: View {
                 }.padding(.vertical, 8)
             }
             Section { ForEach(CandidateMediaKind.allCases) { kind in mediaRow(kind) } } header: { Text("種類") } footer: { Text("複数選択できます。設定はこの端末にすぐ保存されます。") }
+            Section("お気に入り") {
+                Toggle(
+                    "お気に入りも表示",
+                    isOn: Binding(
+                        get: { settings.value.includesFavorites },
+                        set: { settings.setIncludesFavorites($0) }
+                    )
+                )
+            }
         }
         .navigationTitle("表示する写真")
         .navigationBarTitleDisplayMode(.inline)

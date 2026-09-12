@@ -30,19 +30,47 @@ enum CandidateMediaKind: String, Codable, CaseIterable, Identifiable, Sendable {
 struct CandidateSettings: Codable, Equatable, Sendable {
     var period: CandidatePeriod = .all
     var mediaKinds: Set<CandidateMediaKind> = [.photo, .screenshot]
+    var includesFavorites = true
+
+    private enum CodingKeys: String, CodingKey {
+        case period
+        case mediaKinds
+        case includesFavorites
+    }
+
+    init(
+        period: CandidatePeriod = .all,
+        mediaKinds: Set<CandidateMediaKind> = [.photo, .screenshot],
+        includesFavorites: Bool = true
+    ) {
+        self.period = period
+        self.mediaKinds = mediaKinds
+        self.includesFavorites = includesFavorites
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        period = try container.decodeIfPresent(CandidatePeriod.self, forKey: .period) ?? .all
+        mediaKinds = try container.decodeIfPresent(Set<CandidateMediaKind>.self, forKey: .mediaKinds)
+            ?? [.photo, .screenshot]
+        includesFavorites = try container.decodeIfPresent(Bool.self, forKey: .includesFavorites) ?? true
+    }
 
     var conditionKey: String {
         let kinds = mediaKinds.map(\.rawValue).sorted().joined(separator: ",")
-        return "v1|unreviewed|\(period.rawValue)|\(kinds)"
+        let favoriteFilter = includesFavorites ? "" : "|no-favorites"
+        return "v1|unreviewed|\(period.rawValue)|\(kinds)\(favoriteFilter)"
     }
 
     var summary: String {
         let kinds = CandidateMediaKind.allCases.filter(mediaKinds.contains).map(\.label).joined(separator: "、")
-        return "\(period == .all ? "すべて" : period.shortLabel)・\(kinds.isEmpty ? "種類なし" : kinds)"
+        let favorites = includesFavorites ? "" : "・お気に入りを除外"
+        return "\(period == .all ? "すべて" : period.shortLabel)・\(kinds.isEmpty ? "種類なし" : kinds)\(favorites)"
     }
 
     func includes(_ asset: PHAsset) -> Bool {
         if let start = period.startDate(), let creationDate = asset.creationDate, creationDate < start { return false }
+        if !includesFavorites, asset.isFavorite { return false }
         switch asset.mediaType {
         case .video: return mediaKinds.contains(.video)
         case .image:

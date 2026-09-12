@@ -34,34 +34,40 @@ struct OrganizeView: View {
         }
     }
 
-    @ViewBuilder
-    private var organizeBackground: some View {
+    private var organizeBackground: LinearGradient {
+        let colors: [Color]
+        let startPoint: UnitPoint
+        let endPoint: UnitPoint
+
         if !isDeckVisible {
-            Color.swipeeBackground
+            colors = [.swipeeBackground, .swipeeBackground]
+            startPoint = .topLeading
+            endPoint = .bottomTrailing
         } else {
             switch activeSwipeDecision {
             case .trash:
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.08, green: 0.05, blue: 0.12),
-                        Color(red: 0.24, green: 0.15, blue: 0.34)
-                    ],
-                    startPoint: .topTrailing,
-                    endPoint: .bottomLeading
-                )
+                colors = [
+                    Color(red: 0.08, green: 0.05, blue: 0.12),
+                    Color(red: 0.24, green: 0.15, blue: 0.34)
+                ]
+                startPoint = .topTrailing
+                endPoint = .bottomLeading
             case .keep:
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.02, green: 0.10, blue: 0.06),
-                        Color(red: 0.10, green: 0.31, blue: 0.20)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                colors = [
+                    Color(red: 0.02, green: 0.10, blue: 0.06),
+                    Color(red: 0.10, green: 0.31, blue: 0.20)
+                ]
+                startPoint = .topLeading
+                endPoint = .bottomTrailing
             default:
-                Color(red: 0.043, green: 0.043, blue: 0.051)
+                let restingColor = Color(red: 0.043, green: 0.043, blue: 0.051)
+                colors = [restingColor, restingColor]
+                startPoint = .topLeading
+                endPoint = .bottomTrailing
             }
         }
+
+        return LinearGradient(colors: colors, startPoint: startPoint, endPoint: endPoint)
     }
 
     private var deckControlBackground: Color {
@@ -74,10 +80,11 @@ struct OrganizeView: View {
 
     var body: some View {
         ZStack {
-            organizeBackground.ignoresSafeArea()
+            organizeBackground
+                .ignoresSafeArea()
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
             content.padding(.horizontal, 10).padding(.bottom, 6)
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topTrailing) {
             if !isDeckVisible {

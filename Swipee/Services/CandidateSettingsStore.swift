@@ -16,6 +16,10 @@ final class CandidateSettingsStore: ObservableObject {
     }
 
     func setPeriod(_ period: CandidatePeriod) { value.period = period; save() }
+    func setIncludesFavorites(_ includesFavorites: Bool) {
+        value.includesFavorites = includesFavorites
+        save()
+    }
     func toggle(_ kind: CandidateMediaKind) {
         if value.mediaKinds.contains(kind) { value.mediaKinds.remove(kind) } else { value.mediaKinds.insert(kind) }
         save()
