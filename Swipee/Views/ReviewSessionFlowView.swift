@@ -160,7 +160,7 @@ struct ReviewSessionFlowView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)
-            .tint(session.deletionCount > 0 ? Color.swipeeDestructive : Color.primary)
+            .tint(session.deletionCount > 0 ? Color.swipeeDelete : Color.primary)
             .disabled(isDeleting || assets.isEmpty)
         }
         .padding(.horizontal, 18)
