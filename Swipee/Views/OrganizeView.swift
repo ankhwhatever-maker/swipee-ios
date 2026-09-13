@@ -11,7 +11,6 @@ struct OrganizeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingFilters = false
-    @State private var showingKeptResetConfirmation = false
     @State private var showingSessionReview = false
     @State private var processing = false
     @State private var requestedDecision: SwipeDecision?
@@ -79,18 +78,6 @@ struct OrganizeView: View {
         }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await reload() } } }
         .alert("操作を完了できませんでした", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(library.errorMessage ?? "") }
-        .confirmationDialog(
-            "キープ済み写真をもう一度表示しますか？",
-            isPresented: $showingKeptResetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("再表示", role: .destructive) {
-                history.clearKept(excluding: currentSessionKeptIdentifiers)
-            }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("これまでキープした写真が整理対象に戻ります。今回整理中の写真と、削除予定・削除済みの写真には影響しません。")
-        }
     }
 
     @ViewBuilder private var content: some View {
@@ -216,22 +203,7 @@ struct OrganizeView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            if !resettableKeptIdentifiers.isEmpty {
-                Button("キープ済み写真をもう一度表示") {
-                    showingKeptResetConfirmation = true
-                }
-            }
         }
-    }
-
-    private var currentSessionKeptIdentifiers: Set<String> {
-        Set(session.items.lazy
-            .filter { $0.decision == .keep }
-            .map(\.assetIdentifier))
-    }
-
-    private var resettableKeptIdentifiers: Set<String> {
-        history.keptAssetIdentifiers.subtracting(currentSessionKeptIdentifiers)
     }
 
     private var sessionReadyState: some View {
