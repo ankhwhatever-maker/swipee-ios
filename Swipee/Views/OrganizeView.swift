@@ -286,11 +286,6 @@ struct OrganizeView: View {
         } description: {
             Text("削除する写真を確認して、今回の整理を終えましょう。")
         } actions: {
-            if canUndoLastAction {
-                Button("直前の操作を戻す") {
-                    undoLastAction()
-                }
-            }
             Button("今回の\(ReviewSessionStore.targetCount)枚を確認") {
                 showingSessionReview = true
             }
