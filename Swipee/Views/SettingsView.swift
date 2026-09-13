@@ -11,7 +11,7 @@ struct SettingsView: View {
             }
             Section("サポート") {
                 NavigationLink { FAQView() } label: { settingsRow("questionmark.circle", "FAQ") }
-                Link(destination: URL(string: "mailto:support@example.com")!) { settingsRow("envelope", "お問い合わせ", chevron: true) }.foregroundStyle(.primary)
+                Link(destination: URL(string: "mailto:support.swipee@gmail.com")!) { settingsRow("envelope", "お問い合わせ", chevron: true) }.foregroundStyle(.primary)
                 NavigationLink { LegalView(kind: .privacy) } label: { settingsRow("hand.raised", "プライバシーポリシー") }
                 NavigationLink { LegalView(kind: .terms) } label: { settingsRow("doc.text", "利用規約") }
             }
