@@ -56,7 +56,7 @@ struct PhotoFilterView: View {
                 favoriteRow
             }
             Section {
-                Button("確認済みを元に戻す") {
+                Button("確認済みの写真を再表示") {
                     showingReviewedResetConfirmation = true
                 }
                 .disabled(!hasResettableReviewedItems)
@@ -81,18 +81,17 @@ struct PhotoFilterView: View {
         .onAppear {
             if draft == nil { draft = settings.value }
         }
-        .confirmationDialog(
-            "確認済みの写真を元に戻しますか？",
-            isPresented: $showingReviewedResetConfirmation,
-            titleVisibility: .visible
+        .alert(
+            "確認済みの写真をもう一度表示しますか？",
+            isPresented: $showingReviewedResetConfirmation
         ) {
-            Button("元に戻す", role: .destructive) {
+            Button("キャンセル", role: .cancel) {}
+            Button("再表示") {
                 history.clearKept(excluding: currentSessionKeptIdentifiers)
                 duplicateReviewed.clear()
             }
-            Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("整理でキープした写真と、確認済みにした重複候補が再表示されます。今回整理中の写真と、削除予定・削除済みの写真には影響しません。")
+            Text("整理でキープした写真と、確認済みにした重複候補が再表示されます。削除予定・削除済みの写真には影響しません。")
         }
     }
 
