@@ -56,12 +56,12 @@ struct PhotoFilterView: View {
                 favoriteRow
             }
             Section {
-                Button("確認済みの写真を再表示") {
+                Button("整理済みの写真を再表示") {
                     showingReviewedResetConfirmation = true
                 }
                 .disabled(!hasResettableReviewedItems)
             } header: {
-                Text("確認済みの写真")
+                Text("整理済みの写真")
             } footer: {
                 Text("整理済みの写真と重複候補を、もう一度表示します。")
             }
@@ -82,7 +82,7 @@ struct PhotoFilterView: View {
             if draft == nil { draft = settings.value }
         }
         .alert(
-            "確認済みの写真をもう一度表示しますか？",
+            "整理済みの写真をもう一度表示しますか？",
             isPresented: $showingReviewedResetConfirmation
         ) {
             Button("キャンセル", role: .cancel) {}
