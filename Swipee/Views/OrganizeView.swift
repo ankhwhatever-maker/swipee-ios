@@ -78,7 +78,7 @@ struct OrganizeView: View {
             Task { await reload() }
         }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await reload() } } }
-        .alert("操作を完了できませんでした", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(library.errorMessage ?? "") }
+        .alert("お気に入りを変更できませんでした", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(library.errorMessage ?? "") }
     }
 
     @ViewBuilder private var content: some View {
@@ -224,8 +224,21 @@ struct OrganizeView: View {
         session.importPendingRecords(
             pendingDeletions.records.filter { !$0.sourceConditionKey.hasPrefix("duplicates|") }
         )
-        await reloadIfNeeded()
-        if session.isComplete { showingSessionReview = true }
+        if session.isComplete {
+            showingSessionReview = true
+            return
+        }
+
+        let selectedSettings = settings.value
+        await library.reloadIfNeeded(
+            settings: selectedSettings,
+            history: history,
+            pendingDeletions: pendingDeletions
+        )
+        if settings.value.conditionKey == selectedSettings.conditionKey {
+            loadedConditionKey = selectedSettings.conditionKey
+            loadedPendingDeletionRevision = pendingDeletions.revision
+        }
     }
     private func reload() async {
         let selectedSettings = settings.value

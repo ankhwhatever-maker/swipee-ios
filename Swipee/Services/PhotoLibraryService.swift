@@ -7,10 +7,14 @@ final class PhotoLibraryService: ObservableObject {
     @Published private(set) var candidates: [PHAsset] = []
     @Published var errorMessage: String?
     @Published private(set) var isLoading = false
+    @Published private(set) var loadedConditionKey: String?
+    @Published private(set) var loadedPendingDeletionRevision: Int?
 
     let imageManager = PHCachingImageManager()
     private var cachedAssets: [PHAsset] = []
     private var reloadGeneration = 0
+    private var loadingConditionKey: String?
+    private var loadingPendingDeletionRevision: Int?
     private let deckCacheTargetSize = CGSize(width: 900, height: 1200)
 
     var canReadLibrary: Bool { authorizationStatus == .authorized || authorizationStatus == .limited }
@@ -35,11 +39,17 @@ final class PhotoLibraryService: ObservableObject {
         guard canReadLibrary else {
             candidates = []
             isLoading = false
+            loadedConditionKey = nil
+            loadedPendingDeletionRevision = nil
             return
         }
         isLoading = true
         defer {
-            if generation == reloadGeneration { isLoading = false }
+            if generation == reloadGeneration {
+                isLoading = false
+                loadingConditionKey = nil
+                loadingPendingDeletionRevision = nil
+            }
         }
 
         if authorizationStatus == .authorized, !pendingDeletions.records.isEmpty {
@@ -50,6 +60,9 @@ final class PhotoLibraryService: ObservableObject {
             pendingDeletions.reconcile(validAssetIdentifiers: availableIdentifiers)
         }
 
+        let pendingDeletionRevision = pendingDeletions.revision
+        loadingConditionKey = settings.conditionKey
+        loadingPendingDeletionRevision = pendingDeletionRevision
         let pendingIdentifiers = pendingDeletions.assetIdentifiers
         let reviewedIdentifiers = history.keptAssetIdentifiers
         let next = await Task.detached(priority: .userInitiated) {
@@ -83,7 +96,46 @@ final class PhotoLibraryService: ObservableObject {
         }.value
         guard !Task.isCancelled, generation == reloadGeneration else { return }
         candidates = next
+        loadedConditionKey = settings.conditionKey
+        loadedPendingDeletionRevision = pendingDeletionRevision
         updateCache(startingAt: 0)
+    }
+
+    func reloadIfNeeded(
+        settings: CandidateSettings,
+        history: ReviewHistoryStore,
+        pendingDeletions: PendingDeletionStore
+    ) async {
+        if hasLoadedCandidates(for: settings, pendingDeletionRevision: pendingDeletions.revision) {
+            return
+        }
+
+        if isLoading,
+           loadingConditionKey == settings.conditionKey,
+           loadingPendingDeletionRevision == pendingDeletions.revision {
+            while isLoading,
+                  loadingConditionKey == settings.conditionKey,
+                  loadingPendingDeletionRevision == pendingDeletions.revision {
+                do {
+                    try await Task.sleep(for: .milliseconds(50))
+                } catch {
+                    return
+                }
+            }
+            if hasLoadedCandidates(for: settings, pendingDeletionRevision: pendingDeletions.revision) {
+                return
+            }
+        }
+
+        await reload(settings: settings, history: history, pendingDeletions: pendingDeletions)
+    }
+
+    func hasLoadedCandidates(
+        for settings: CandidateSettings,
+        pendingDeletionRevision: Int
+    ) -> Bool {
+        loadedConditionKey == settings.conditionKey &&
+            loadedPendingDeletionRevision == pendingDeletionRevision
     }
 
     func removeCandidate(_ asset: PHAsset) {
