@@ -30,7 +30,6 @@ final class ReviewSessionStore: ObservableObject {
         assetIdentifier: String,
         sourceConditionKey: String,
         decision: SwipeDecision,
-        previousFavoriteState: Bool? = nil,
         reviewedAt: Date = .now
     ) {
         guard !items.contains(where: { $0.assetIdentifier == assetIdentifier }) else { return }
@@ -39,8 +38,6 @@ final class ReviewSessionStore: ObservableObject {
                 assetIdentifier: assetIdentifier,
                 sourceConditionKey: sourceConditionKey,
                 decision: decision,
-                originalDecision: decision,
-                previousFavoriteState: previousFavoriteState,
                 reviewedAt: reviewedAt
             )
         )
@@ -67,12 +64,10 @@ final class ReviewSessionStore: ObservableObject {
 
     func updateDecision(
         assetIdentifier: String,
-        decision: SwipeDecision,
-        decisionBeforeDeletion: SwipeDecision? = nil
+        decision: SwipeDecision
     ) {
         guard let index = items.firstIndex(where: { $0.assetIdentifier == assetIdentifier }) else { return }
         items[index].decision = decision
-        items[index].decisionBeforeDeletion = decision == .trash ? decisionBeforeDeletion : nil
         persistItems()
     }
 
@@ -84,7 +79,6 @@ final class ReviewSessionStore: ObservableObject {
                     assetIdentifier: record.assetIdentifier,
                     sourceConditionKey: record.sourceConditionKey,
                     decision: .trash,
-                    originalDecision: .trash,
                     reviewedAt: record.queuedAt
                 )
             )

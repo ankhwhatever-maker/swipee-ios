@@ -1,6 +1,6 @@
 import Foundation
 
-enum SwipeDecision: String, Codable { case trash, keep, favorite }
+enum SwipeDecision: String, Codable { case trash, keep }
 
 struct ReviewRecord: Codable, Equatable {
     let assetIdentifier: String

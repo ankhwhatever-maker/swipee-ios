@@ -86,14 +86,13 @@ struct ReviewSessionFlowView: View {
         guard let item = session.items.first(where: { $0.assetIdentifier == asset.localIdentifier }) else { return }
 
         if currentDecision == .trash {
-            let restoredDecision = item.decisionRestoredAfterRemovingDeletion
             pendingDeletions.remove(assetIdentifier: asset.localIdentifier)
             history.record(
                 assetIdentifier: asset.localIdentifier,
                 conditionKey: item.sourceConditionKey,
-                decision: restoredDecision
+                decision: .keep
             )
-            session.updateDecision(assetIdentifier: asset.localIdentifier, decision: restoredDecision)
+            session.updateDecision(assetIdentifier: asset.localIdentifier, decision: .keep)
         } else {
             history.remove(assetIdentifier: asset.localIdentifier, conditionKey: item.sourceConditionKey)
             pendingDeletions.enqueue(
@@ -102,8 +101,7 @@ struct ReviewSessionFlowView: View {
             )
             session.updateDecision(
                 assetIdentifier: asset.localIdentifier,
-                decision: .trash,
-                decisionBeforeDeletion: currentDecision
+                decision: .trash
             )
         }
     }

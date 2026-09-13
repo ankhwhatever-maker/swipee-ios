@@ -91,7 +91,6 @@ extension Color {
     static let swipeeElevatedSurface = Color(uiColor: .secondarySystemGroupedBackground)
     static let swipeeBorder = Color("SwipeeBorder")
     static let swipeeDelete = Color("SwipeeDelete")
-    static let swipeeFavorite = Color("SwipeeFavorite")
     static let swipeeKeep = Color("SwipeeKeep")
     static let swipeePhotoOverlay = Color("SwipeePhotoOverlay")
 }

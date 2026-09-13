@@ -42,16 +42,13 @@ final class ReviewSessionStoreTests: XCTestCase {
         firstStore.append(
             assetIdentifier: "asset-1",
             sourceConditionKey: "condition-a",
-            decision: .favorite,
-            previousFavoriteState: true
+            decision: .keep
         )
         firstStore.updateDecision(assetIdentifier: "asset-1", decision: .trash)
 
         let restoredStore = ReviewSessionStore(defaults: defaults)
 
         XCTAssertEqual(restoredStore.items.first?.decision, .trash)
-        XCTAssertEqual(restoredStore.items.first?.originalDecision, .favorite)
-        XCTAssertEqual(restoredStore.items.first?.previousFavoriteState, true)
         XCTAssertEqual(restoredStore.items.first?.sourceConditionKey, "condition-a")
     }
 
@@ -59,12 +56,7 @@ final class ReviewSessionStoreTests: XCTestCase {
         let store = ReviewSessionStore(defaults: defaults)
         store.append(assetIdentifier: "asset-1", sourceConditionKey: "condition-a", decision: .trash)
         store.append(assetIdentifier: "asset-2", sourceConditionKey: "condition-a", decision: .keep)
-        store.append(
-            assetIdentifier: "asset-3",
-            sourceConditionKey: "condition-a",
-            decision: .favorite,
-            previousFavoriteState: true
-        )
+        store.append(assetIdentifier: "asset-3", sourceConditionKey: "condition-a", decision: .keep)
 
         XCTAssertEqual(store.removeLast()?.assetIdentifier, "asset-3")
         XCTAssertEqual(store.removeLast()?.assetIdentifier, "asset-2")
@@ -73,27 +65,18 @@ final class ReviewSessionStoreTests: XCTestCase {
         XCTAssertTrue(ReviewSessionStore(defaults: defaults).items.isEmpty)
     }
 
-    func testFavoriteDecisionCanBeRestoredAfterDeletionSelectionIsRemoved() {
+    func testDeletionSelectionCanBeRestoredAsKeep() {
         let store = ReviewSessionStore(defaults: defaults)
         store.append(
             assetIdentifier: "asset-1",
             sourceConditionKey: "condition-a",
-            decision: .favorite
+            decision: .keep
         )
 
-        store.updateDecision(
-            assetIdentifier: "asset-1",
-            decision: .trash,
-            decisionBeforeDeletion: .favorite
-        )
-        let previousDecision = store.items.first?.decisionBeforeDeletion
-        store.updateDecision(
-            assetIdentifier: "asset-1",
-            decision: previousDecision ?? .keep
-        )
+        store.updateDecision(assetIdentifier: "asset-1", decision: .trash)
+        store.updateDecision(assetIdentifier: "asset-1", decision: .keep)
 
-        XCTAssertEqual(store.items.first?.decision, .favorite)
-        XCTAssertNil(store.items.first?.decisionBeforeDeletion)
+        XCTAssertEqual(store.items.first?.decision, .keep)
     }
 
     func testFinishingSessionPersistsCumulativeDeletedCount() {

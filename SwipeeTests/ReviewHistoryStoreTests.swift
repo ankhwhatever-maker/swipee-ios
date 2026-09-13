@@ -35,7 +35,7 @@ final class ReviewHistoryStoreTests: XCTestCase {
     func testRemoveDoesNotAffectAnotherCondition() {
         let store = ReviewHistoryStore(defaults: defaults)
         store.record(assetIdentifier: "asset-1", conditionKey: "condition-a", decision: .keep)
-        store.record(assetIdentifier: "asset-1", conditionKey: "condition-b", decision: .favorite)
+        store.record(assetIdentifier: "asset-1", conditionKey: "condition-b", decision: .keep)
 
         store.remove(assetIdentifier: "asset-1", conditionKey: "condition-a")
 

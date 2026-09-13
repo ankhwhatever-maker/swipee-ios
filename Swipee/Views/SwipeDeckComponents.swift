@@ -143,8 +143,6 @@ enum CardRestorationAnimation {
             return CGSize(width: -max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
         case .keep:
             return CGSize(width: max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
-        case .favorite:
-            return CGSize(width: 0, height: -max(size.height * 1.15, 620) * remaining)
         }
     }
 
@@ -158,7 +156,6 @@ enum CardRestorationAnimation {
         switch decision {
         case .trash: return .degrees(-10 * remaining)
         case .keep: return .degrees(10 * remaining)
-        case .favorite: return .zero
         }
     }
 }

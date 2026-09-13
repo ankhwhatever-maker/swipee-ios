@@ -661,7 +661,6 @@ struct SwipeCardView: View {
         let destination: CGSize = switch decision {
         case .trash: CGSize(width: -700, height: offset.height * 0.25)
         case .keep: CGSize(width: 700, height: offset.height * 0.25)
-        case .favorite: CGSize(width: offset.width * 0.2, height: -900)
         }
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { offset = destination }
         Task {

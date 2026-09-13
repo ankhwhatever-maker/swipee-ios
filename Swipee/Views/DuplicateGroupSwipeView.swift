@@ -254,32 +254,23 @@ struct DuplicateGroupSwipeView: View {
     private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
         guard !processing, remainingAssets.first?.localIdentifier == asset.localIdentifier else { return false }
         processing = true
-        do {
-            let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
-            if decision == .favorite { try await library.markFavorite(asset) }
-            if decision == .trash {
-                pendingDeletions.enqueue(
-                    assetIdentifier: asset.localIdentifier,
-                    sourceConditionKey: "duplicates|\(group.id)"
-                )
-            }
-            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
-                duplicateSessions.append(
-                    groupIdentifier: group.id,
-                    assetIdentifier: asset.localIdentifier,
-                    decision: decision,
-                    previousFavoriteState: previousFavoriteState
-                )
-            }
-            updateImageCache()
-            processing = false
-            if shouldReviewCurrentBatch { prepareReview() }
-            return true
-        } catch {
-            library.errorMessage = error.localizedDescription
-            processing = false
-            return false
+        if decision == .trash {
+            pendingDeletions.enqueue(
+                assetIdentifier: asset.localIdentifier,
+                sourceConditionKey: "duplicates|\(group.id)"
+            )
         }
+        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
+            duplicateSessions.append(
+                groupIdentifier: group.id,
+                assetIdentifier: asset.localIdentifier,
+                decision: decision
+            )
+        }
+        updateImageCache()
+        processing = false
+        if shouldReviewCurrentBatch { prepareReview() }
+        return true
     }
 
     private func setFavorite(_ asset: PHAsset, isFavorite: Bool) async -> Bool {
@@ -304,7 +295,6 @@ struct DuplicateGroupSwipeView: View {
         guard !processing, let action = currentBatchItems.last else { return }
         processing = true
         Task {
-            let originalDecision = action.originalDecision ?? action.decision
             guard let asset = library.fetchAssets(localIdentifiers: [action.assetIdentifier]).first else {
                 if action.decision == .trash {
                     pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
@@ -315,19 +305,12 @@ struct DuplicateGroupSwipeView: View {
                 return
             }
 
-            do {
-                if originalDecision == .favorite {
-                    try await library.setFavorite(asset, isFavorite: action.previousFavoriteState ?? false)
-                }
-                if action.decision == .trash {
-                    pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
-                }
-                duplicateSessions.removeLast(groupIdentifier: group.id)
-                updateImageCache()
-                await restore(asset, from: originalDecision)
-            } catch {
-                library.errorMessage = error.localizedDescription
+            if action.decision == .trash {
+                pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
             }
+            duplicateSessions.removeLast(groupIdentifier: group.id)
+            updateImageCache()
+            await restore(asset, from: action.decision)
             processing = false
         }
     }

@@ -37,7 +37,7 @@ final class DuplicateSessionStoreTests: XCTestCase {
         let store = DuplicateSessionStore(defaults: defaults)
         store.append(groupIdentifier: "group", assetIdentifier: "asset-1", decision: .trash)
         store.append(groupIdentifier: "group", assetIdentifier: "asset-2", decision: .keep)
-        store.append(groupIdentifier: "group", assetIdentifier: "asset-3", decision: .favorite)
+        store.append(groupIdentifier: "group", assetIdentifier: "asset-3", decision: .keep)
 
         XCTAssertEqual(store.removeLast(groupIdentifier: "group")?.assetIdentifier, "asset-3")
         XCTAssertEqual(store.removeLast(groupIdentifier: "group")?.assetIdentifier, "asset-2")
@@ -45,25 +45,22 @@ final class DuplicateSessionStoreTests: XCTestCase {
         XCTAssertNil(store.removeLast(groupIdentifier: "group"))
     }
 
-    func testReviewSelectionRestoresPreviousDecision() {
+    func testReviewSelectionCanBeRestoredAsKeep() {
         let store = DuplicateSessionStore(defaults: defaults)
-        store.append(groupIdentifier: "group", assetIdentifier: "asset-1", decision: .favorite)
+        store.append(groupIdentifier: "group", assetIdentifier: "asset-1", decision: .keep)
 
         store.updateDecision(
             groupIdentifier: "group",
             assetIdentifier: "asset-1",
-            decision: .trash,
-            decisionBeforeDeletion: .favorite
+            decision: .trash
         )
-        let previous = store.items(for: "group").first?.decisionBeforeDeletion
         store.updateDecision(
             groupIdentifier: "group",
             assetIdentifier: "asset-1",
-            decision: previous ?? .keep
+            decision: .keep
         )
 
-        XCTAssertEqual(store.items(for: "group").first?.decision, .favorite)
-        XCTAssertNil(store.items(for: "group").first?.decisionBeforeDeletion)
+        XCTAssertEqual(store.items(for: "group").first?.decision, .keep)
     }
 
     func testInitiallyDeletedItemRestoresAsKeepInReview() {
@@ -76,11 +73,10 @@ final class DuplicateSessionStoreTests: XCTestCase {
         store.updateDecision(
             groupIdentifier: "group",
             assetIdentifier: item.assetIdentifier,
-            decision: item.decisionRestoredAfterRemovingDeletion
+            decision: .keep
         )
 
         XCTAssertEqual(store.items(for: "group").first?.decision, .keep)
-        XCTAssertNil(store.items(for: "group").first?.decisionBeforeDeletion)
     }
 
     func testClearingOneGroupDoesNotClearAnother() {

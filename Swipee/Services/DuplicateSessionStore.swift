@@ -44,7 +44,6 @@ final class DuplicateSessionStore: ObservableObject {
         groupIdentifier: String,
         assetIdentifier: String,
         decision: SwipeDecision,
-        previousFavoriteState: Bool? = nil,
         reviewedAt: Date = .now
     ) {
         var items = sessions[groupIdentifier] ?? []
@@ -54,8 +53,6 @@ final class DuplicateSessionStore: ObservableObject {
                 assetIdentifier: assetIdentifier,
                 sourceConditionKey: "duplicates|\(groupIdentifier)",
                 decision: decision,
-                originalDecision: decision,
-                previousFavoriteState: previousFavoriteState,
                 reviewedAt: reviewedAt
             )
         )
@@ -75,13 +72,11 @@ final class DuplicateSessionStore: ObservableObject {
     func updateDecision(
         groupIdentifier: String,
         assetIdentifier: String,
-        decision: SwipeDecision,
-        decisionBeforeDeletion: SwipeDecision? = nil
+        decision: SwipeDecision
     ) {
         guard var items = sessions[groupIdentifier],
               let index = items.firstIndex(where: { $0.assetIdentifier == assetIdentifier }) else { return }
         items[index].decision = decision
-        items[index].decisionBeforeDeletion = decision == .trash ? decisionBeforeDeletion : nil
         sessions[groupIdentifier] = items
         persist()
     }

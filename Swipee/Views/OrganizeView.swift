@@ -249,27 +249,18 @@ struct OrganizeView: View {
             return true
         }
 
-        do {
-            let previousFavoriteState = decision == .favorite ? asset.isFavorite : nil
-            if decision == .favorite { try await library.markFavorite(asset) }
-            history.record(assetIdentifier: asset.localIdentifier, conditionKey: settings.value.conditionKey, decision: decision)
-            session.append(
-                assetIdentifier: asset.localIdentifier,
-                sourceConditionKey: settings.value.conditionKey,
-                decision: decision,
-                previousFavoriteState: previousFavoriteState
-            )
-            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
-                library.removeCandidate(asset)
-            }
-            processing = false
-            if session.isComplete { showingSessionReview = true }
-            return true
-        } catch {
-            library.errorMessage = error.localizedDescription
-            processing = false
-            return false
+        history.record(assetIdentifier: asset.localIdentifier, conditionKey: settings.value.conditionKey, decision: .keep)
+        session.append(
+            assetIdentifier: asset.localIdentifier,
+            sourceConditionKey: settings.value.conditionKey,
+            decision: .keep
+        )
+        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
+            library.removeCandidate(asset)
         }
+        processing = false
+        if session.isComplete { showingSessionReview = true }
+        return true
     }
 
     private func setFavorite(_ asset: PHAsset, isFavorite: Bool) async -> Bool {
@@ -298,7 +289,6 @@ struct OrganizeView: View {
               let action = session.items.last else { return }
         processing = true
         Task {
-            let originalDecision = action.originalDecision ?? action.decision
             guard let asset = library.fetchAssets(localIdentifiers: [action.assetIdentifier]).first else {
                 if action.decision == .trash {
                     pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
@@ -310,33 +300,21 @@ struct OrganizeView: View {
                 return
             }
 
-            do {
-                if originalDecision == .favorite {
-                    try await library.setFavorite(asset, isFavorite: action.previousFavoriteState ?? false)
+            switch action.decision {
+            case .trash:
+                guard pendingDeletions.remove(assetIdentifier: action.assetIdentifier) != nil else {
+                    processing = false
+                    return
                 }
-                switch action.decision {
-                case .trash:
-                    guard pendingDeletions.remove(assetIdentifier: action.assetIdentifier) != nil else {
-                        processing = false
-                        return
-                    }
-                case .keep:
-                    guard history.remove(assetIdentifier: action.assetIdentifier, conditionKey: action.sourceConditionKey) != nil else {
-                        processing = false
-                        return
-                    }
-                case .favorite:
-                    guard history.remove(assetIdentifier: action.assetIdentifier, conditionKey: action.sourceConditionKey) != nil else {
-                        processing = false
-                        return
-                    }
+            case .keep:
+                guard history.remove(assetIdentifier: action.assetIdentifier, conditionKey: action.sourceConditionKey) != nil else {
+                    processing = false
+                    return
                 }
-
-                session.removeLast()
-                if settings.value.includes(asset) { await restore(asset, from: originalDecision) }
-            } catch {
-                library.errorMessage = error.localizedDescription
             }
+
+            session.removeLast()
+            if settings.value.includes(asset) { await restore(asset, from: action.decision) }
             processing = false
         }
     }

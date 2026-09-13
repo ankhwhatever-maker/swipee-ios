@@ -129,10 +129,6 @@ final class PhotoLibraryService: ObservableObject {
         }.value
     }
 
-    func markFavorite(_ asset: PHAsset) async throws {
-        try await setFavorite(asset, isFavorite: true)
-    }
-
     func setFavorite(_ asset: PHAsset, isFavorite: Bool) async throws {
         try await PHPhotoLibrary.shared().performChanges {
             PHAssetChangeRequest(for: asset).isFavorite = isFavorite

@@ -113,9 +113,7 @@ struct ReviewBatchScreen: View {
         }
         .buttonStyle(.plain)
         .disabled(isDeleting)
-        .accessibilityLabel(
-            isDeletion ? "削除候補" : decision == .favorite ? "お気に入り" : "キープ"
-        )
+        .accessibilityLabel(isDeletion ? "削除候補" : "キープ")
         .accessibilityHint("ダブルタップで削除候補を切り替えます")
     }
 
@@ -160,7 +158,6 @@ struct ReviewBatchScreen: View {
         switch decision {
         case .trash: return "trash.fill"
         case .keep: return "checkmark"
-        case .favorite: return "star.fill"
         }
     }
 
@@ -168,7 +165,6 @@ struct ReviewBatchScreen: View {
         switch decision {
         case .trash: return .swipeeDelete
         case .keep: return .swipeeKeep
-        case .favorite: return .swipeeFavorite
         }
     }
 }
