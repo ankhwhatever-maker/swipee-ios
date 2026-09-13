@@ -1,9 +1,9 @@
 import SwiftUI
 import UIKit
 
-struct PhotoSharePayload: Identifiable {
+struct AssetSharePayload: Identifiable {
     let id = UUID()
-    let image: UIImage
+    let items: [Any]
 }
 
 struct ActivityShareSheet: UIViewControllerRepresentable {

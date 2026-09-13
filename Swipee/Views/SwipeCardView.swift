@@ -24,7 +24,9 @@ struct SwipeCardView: View {
     @State private var isPreparingShare = false
     @State private var shareRequestID: PHImageRequestID?
     @State private var shareRequestGeneration = 0
-    @State private var sharePayload: PhotoSharePayload?
+    @State private var sharePayload: AssetSharePayload?
+    @State private var shareTemporaryDirectory: URL?
+    @State private var shareErrorMessage: String?
     @State private var videoPlayer = AVPlayer()
     @State private var isVideoMuted = true
 
@@ -44,11 +46,20 @@ struct SwipeCardView: View {
                     }
                 }
             }
-            .sheet(item: $sharePayload) { payload in
-                ActivityShareSheet(items: [payload.image])
+            .sheet(item: $sharePayload, onDismiss: cleanupShareFiles) { payload in
+                ActivityShareSheet(items: payload.items)
+            }
+            .alert("共有できません", isPresented: Binding(
+                get: { shareErrorMessage != nil },
+                set: { if !$0 { shareErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(shareErrorMessage ?? "")
             }
             .onDisappear {
                 cancelSharePreparation()
+                cleanupShareFiles()
             }
     }
 
@@ -139,7 +150,7 @@ struct SwipeCardView: View {
                 .frame(width: 44, height: 46)
             }
             .disabled(isPreparingShare)
-            .accessibilityLabel("写真を共有")
+            .accessibilityLabel("共有")
 
             Rectangle()
                 .fill(.white.opacity(0.3))
@@ -311,6 +322,25 @@ struct SwipeCardView: View {
         isPreparingShare = true
         shareRequestGeneration &+= 1
         let generation = shareRequestGeneration
+
+        if asset.mediaType == .video {
+            prepareResourceShare(
+                resources: preferredVideoResources(),
+                generation: generation,
+                unavailableMessage: "動画を取得できませんでした。iCloudまたは写真へのアクセスを確認してください。"
+            )
+        } else if asset.mediaSubtypes.contains(.photoLive) {
+            prepareResourceShare(
+                resources: preferredLivePhotoResources(),
+                generation: generation,
+                unavailableMessage: "Live Photoを取得できませんでした。iCloudまたは写真へのアクセスを確認してください。"
+            )
+        } else {
+            preparePhotoShare(generation: generation)
+        }
+    }
+
+    private func preparePhotoShare(generation: Int) {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.resizeMode = .none
@@ -321,8 +351,116 @@ struct SwipeCardView: View {
                 guard generation == shareRequestGeneration else { return }
                 isPreparingShare = false
                 shareRequestID = nil
-                guard let data, let image = UIImage(data: data) else { return }
-                sharePayload = PhotoSharePayload(image: image)
+                guard let data, let image = UIImage(data: data) else {
+                    shareErrorMessage = "写真を取得できませんでした。iCloudまたは写真へのアクセスを確認してください。"
+                    return
+                }
+                sharePayload = AssetSharePayload(items: [image])
+            }
+        }
+    }
+
+    private func prepareResourceShare(
+        resources: [PHAssetResource],
+        generation: Int,
+        unavailableMessage: String
+    ) {
+        guard !resources.isEmpty else {
+            isPreparingShare = false
+            shareErrorMessage = unavailableMessage
+            return
+        }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SwipeeShare-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            isPreparingShare = false
+            shareErrorMessage = "共有ファイルを準備できませんでした。"
+            return
+        }
+
+        let destinations = resources.enumerated().map { index, resource in
+            let originalName = URL(fileURLWithPath: resource.originalFilename).lastPathComponent
+            let fallbackName = "media-\(index + 1)"
+            let filename = originalName.isEmpty ? fallbackName : originalName
+            return directory.appendingPathComponent(filename)
+        }
+
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        Self.writeShareResources(
+            resources,
+            to: destinations,
+            options: options
+        ) { error in
+            Task { @MainActor in
+                guard generation == shareRequestGeneration else {
+                    try? FileManager.default.removeItem(at: directory)
+                    return
+                }
+                isPreparingShare = false
+                guard error == nil else {
+                    try? FileManager.default.removeItem(at: directory)
+                    shareErrorMessage = unavailableMessage
+                    return
+                }
+                cleanupShareFiles()
+                shareTemporaryDirectory = directory
+                sharePayload = AssetSharePayload(items: destinations)
+            }
+        }
+    }
+
+    private func preferredVideoResources() -> [PHAssetResource] {
+        let resources = PHAssetResource.assetResources(for: asset)
+        if let resource = resources.first(where: { $0.type == .fullSizeVideo })
+            ?? resources.first(where: { $0.type == .video }) {
+            return [resource]
+        }
+        return []
+    }
+
+    private func preferredLivePhotoResources() -> [PHAssetResource] {
+        let resources = PHAssetResource.assetResources(for: asset)
+        if let photo = resources.first(where: { $0.type == .fullSizePhoto }),
+           let pairedVideo = resources.first(where: { $0.type == .fullSizePairedVideo }) {
+            return [photo, pairedVideo]
+        }
+        if let photo = resources.first(where: { $0.type == .photo }),
+           let pairedVideo = resources.first(where: { $0.type == .pairedVideo }) {
+            return [photo, pairedVideo]
+        }
+        return []
+    }
+
+    private static func writeShareResources(
+        _ resources: [PHAssetResource],
+        to destinations: [URL],
+        options: PHAssetResourceRequestOptions,
+        index: Int = 0,
+        completion: @escaping (Error?) -> Void
+    ) {
+        guard index < resources.count else {
+            completion(nil)
+            return
+        }
+        PHAssetResourceManager.default().writeData(
+            for: resources[index],
+            toFile: destinations[index],
+            options: options
+        ) { error in
+            if let error {
+                completion(error)
+            } else {
+                writeShareResources(
+                    resources,
+                    to: destinations,
+                    options: options,
+                    index: index + 1,
+                    completion: completion
+                )
             }
         }
     }
@@ -332,6 +470,12 @@ struct SwipeCardView: View {
         if let shareRequestID { manager.cancelImageRequest(shareRequestID) }
         shareRequestID = nil
         isPreparingShare = false
+    }
+
+    private func cleanupShareFiles() {
+        guard let shareTemporaryDirectory else { return }
+        try? FileManager.default.removeItem(at: shareTemporaryDirectory)
+        self.shareTemporaryDirectory = nil
     }
 
     private var movingCard: some View {
