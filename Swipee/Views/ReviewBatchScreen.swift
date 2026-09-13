@@ -12,6 +12,7 @@ struct ReviewBatchScreen: View {
     let isDeleting: Bool
     let imageManager: PHCachingImageManager
     let backAccessibilityLabel: String
+    let excludedItemCount: Int
     let decisionForAsset: (PHAsset) -> SwipeDecision
     let onToggleDeletion: (PHAsset, SwipeDecision) -> Void
     let onBack: () -> Void
@@ -39,6 +40,15 @@ struct ReviewBatchScreen: View {
                             ForEach(assets, id: \.localIdentifier) { asset in
                                 reviewCell(asset)
                             }
+                        }
+
+                        if excludedItemCount > 0 {
+                            Label(
+                                "\(excludedItemCount)枚は現在アクセスできないため、確認対象から除外しました",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         }
 
                         if inaccessibleCount > 0 {
@@ -142,7 +152,7 @@ struct ReviewBatchScreen: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(deletionCount > 0 ? Color.swipeeDelete : Color.primary)
-            .disabled(isDeleting || assets.isEmpty)
+            .disabled(isDeleting || (assets.isEmpty && expectedItemCount > 0))
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)

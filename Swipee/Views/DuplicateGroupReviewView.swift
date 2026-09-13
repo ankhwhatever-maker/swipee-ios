@@ -25,6 +25,8 @@ struct DuplicateGroupReviewView: View {
     @State private var result: DuplicateGroupResult?
     @State private var isDeleting = false
     @State private var errorMessage: String?
+    @State private var excludedItemCount = 0
+    @State private var isGroupReviewable: Bool?
 
     private var items: [ReviewSessionItem] {
         let itemsByIdentifier = Dictionary(
@@ -53,6 +55,10 @@ struct DuplicateGroupReviewView: View {
                     primaryButtonTitle: isFinalBatch ? "重複候補へ戻る" : "次の写真を見る",
                     onPrimaryAction: onPrimaryAction
                 )
+            } else if isGroupReviewable == false {
+                insufficientGroupState
+            } else if isGroupReviewable == nil {
+                ProgressView()
             } else {
                 reviewScreen
             }
@@ -81,6 +87,7 @@ struct DuplicateGroupReviewView: View {
             isDeleting: isDeleting,
             imageManager: library.imageManager,
             backAccessibilityLabel: "重複整理に戻る",
+            excludedItemCount: excludedItemCount,
             decisionForAsset: { asset in
                 items.first {
                     $0.assetIdentifier == asset.localIdentifier
@@ -94,8 +101,26 @@ struct DuplicateGroupReviewView: View {
         )
     }
 
+    private var insufficientGroupState: some View {
+        NavigationStack {
+            ZStack {
+                Color.swipeeBackground.ignoresSafeArea()
+                ContentUnavailableView {
+                    Label("この重複グループは確認できません", systemImage: "photo.badge.exclamationmark")
+                } description: {
+                    Text("現在アクセスできる写真が2枚未満になりました。")
+                } actions: {
+                    Button("重複候補へ戻る", action: onBack)
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .navigationTitle("重複内容の確認")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
     private func loadAssets() {
-        assets = library.fetchAssets(localIdentifiers: batchAssetIdentifiers)
+        reconcileUnavailableItems()
     }
 
     private func toggleDeletion(for asset: PHAsset, currentDecision: SwipeDecision) {
@@ -123,6 +148,8 @@ struct DuplicateGroupReviewView: View {
 
     private func finishGroup() {
         guard !isDeleting else { return }
+        reconcileUnavailableItems()
+        guard isGroupReviewable != false else { return }
         let snapshot = items
         let deletionItems = snapshot.filter { $0.decision == .trash }
         let deletionIdentifiers = Set(deletionItems.map(\.assetIdentifier))
@@ -172,6 +199,47 @@ struct DuplicateGroupReviewView: View {
             }
             isDeleting = false
         }
+    }
+
+    private func reconcileUnavailableItems() {
+        let currentItems = items
+        let accessibleGroupAssets = library.fetchAssets(
+            localIdentifiers: group.assetIdentifiers
+        )
+        isGroupReviewable = accessibleGroupAssets.count >= 2
+        let fetchedAssets = library.fetchAssets(
+            localIdentifiers: currentItems.map(\.assetIdentifier)
+        )
+        let availableIdentifiers = Set(fetchedAssets.map(\.localIdentifier))
+        let unavailableIdentifiers = Set(
+            currentItems.lazy
+                .map(\.assetIdentifier)
+                .filter { !availableIdentifiers.contains($0) }
+        )
+
+        if isGroupReviewable == false {
+            pendingDeletions.remove(
+                assetIdentifiers: Set(currentItems.map(\.assetIdentifier))
+            )
+            duplicateSessions.clear(groupIdentifier: group.id)
+            reviewedGroups.markReviewed(group.id)
+            excludedItemCount += unavailableIdentifiers.count
+            assets = fetchedAssets
+            return
+        }
+
+        guard !unavailableIdentifiers.isEmpty else {
+            assets = fetchedAssets
+            return
+        }
+
+        pendingDeletions.remove(assetIdentifiers: unavailableIdentifiers)
+        duplicateSessions.remove(
+            assetIdentifiers: unavailableIdentifiers,
+            groupIdentifier: group.id
+        )
+        excludedItemCount += unavailableIdentifiers.count
+        assets = fetchedAssets
     }
 
 }

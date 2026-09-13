@@ -62,6 +62,16 @@ final class ReviewSessionStore: ObservableObject {
         return item
     }
 
+    @discardableResult
+    func remove(assetIdentifiers: Set<String>) -> [ReviewSessionItem] {
+        guard !assetIdentifiers.isEmpty else { return [] }
+        let removed = items.filter { assetIdentifiers.contains($0.assetIdentifier) }
+        guard !removed.isEmpty else { return [] }
+        items.removeAll { assetIdentifiers.contains($0.assetIdentifier) }
+        persistItems()
+        return removed
+    }
+
     func updateDecision(
         assetIdentifier: String,
         decision: SwipeDecision

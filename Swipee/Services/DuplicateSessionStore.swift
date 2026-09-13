@@ -69,6 +69,33 @@ final class DuplicateSessionStore: ObservableObject {
         return item
     }
 
+    @discardableResult
+    func remove(
+        assetIdentifiers: Set<String>,
+        groupIdentifier: String
+    ) -> [ReviewSessionItem] {
+        guard !assetIdentifiers.isEmpty,
+              let currentItems = sessions[groupIdentifier] else { return [] }
+
+        let removed = currentItems.filter { assetIdentifiers.contains($0.assetIdentifier) }
+        guard !removed.isEmpty else { return [] }
+
+        let completedCount = self.completedCount(for: groupIdentifier)
+        let removedCompletedCount = currentItems.prefix(completedCount)
+            .filter { assetIdentifiers.contains($0.assetIdentifier) }
+            .count
+        let remainingItems = currentItems.filter {
+            !assetIdentifiers.contains($0.assetIdentifier)
+        }
+        sessions[groupIdentifier] = remainingItems
+        completedCounts[groupIdentifier] = min(
+            max(completedCount - removedCompletedCount, 0),
+            remainingItems.count
+        )
+        persist()
+        return removed
+    }
+
     func updateDecision(
         groupIdentifier: String,
         assetIdentifier: String,

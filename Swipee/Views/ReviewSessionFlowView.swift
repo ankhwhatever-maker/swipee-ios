@@ -20,6 +20,7 @@ struct ReviewSessionFlowView: View {
     @State private var result: ReviewSessionResult?
     @State private var isDeleting = false
     @State private var errorMessage: String?
+    @State private var excludedItemCount = 0
 
     let onContinue: () -> Void
 
@@ -63,6 +64,7 @@ struct ReviewSessionFlowView: View {
             isDeleting: isDeleting,
             imageManager: library.imageManager,
             backAccessibilityLabel: "仕分けに戻る",
+            excludedItemCount: excludedItemCount,
             decisionForAsset: { asset in
                 session.items.first {
                     $0.assetIdentifier == asset.localIdentifier
@@ -81,7 +83,7 @@ struct ReviewSessionFlowView: View {
     }
 
     private func loadAssets() {
-        assets = library.fetchAssets(localIdentifiers: session.items.map(\.assetIdentifier))
+        reconcileUnavailableItems()
     }
 
     private func toggleDeletion(for asset: PHAsset, currentDecision: SwipeDecision) {
@@ -110,6 +112,7 @@ struct ReviewSessionFlowView: View {
 
     private func finishSession() {
         guard !isDeleting else { return }
+        reconcileUnavailableItems()
         let snapshot = session.items
         let deletionItems = snapshot.filter { $0.decision == .trash }
         let deletionIDs = Set(deletionItems.map(\.assetIdentifier))
@@ -164,5 +167,33 @@ struct ReviewSessionFlowView: View {
     private func closeAndContinue() {
         dismiss()
         onContinue()
+    }
+
+    private func reconcileUnavailableItems() {
+        let currentItems = session.items
+        let fetchedAssets = library.fetchAssets(
+            localIdentifiers: currentItems.map(\.assetIdentifier)
+        )
+        let availableIdentifiers = Set(fetchedAssets.map(\.localIdentifier))
+        let unavailableItems = currentItems.filter {
+            !availableIdentifiers.contains($0.assetIdentifier)
+        }
+        let unavailableIdentifiers = Set(unavailableItems.map(\.assetIdentifier))
+
+        guard !unavailableIdentifiers.isEmpty else {
+            assets = fetchedAssets
+            return
+        }
+
+        pendingDeletions.remove(assetIdentifiers: unavailableIdentifiers)
+        for item in unavailableItems where item.decision == .keep {
+            history.remove(
+                assetIdentifier: item.assetIdentifier,
+                conditionKey: item.sourceConditionKey
+            )
+        }
+        session.remove(assetIdentifiers: unavailableIdentifiers)
+        excludedItemCount += unavailableIdentifiers.count
+        assets = fetchedAssets
     }
 }

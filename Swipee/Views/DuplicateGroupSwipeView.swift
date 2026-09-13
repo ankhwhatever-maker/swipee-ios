@@ -97,6 +97,7 @@ struct DuplicateGroupSwipeView: View {
             reviewFinished = false
             reviewingAssetIdentifiers = []
             reviewingFinalBatch = false
+            assets = library.fetchAssets(localIdentifiers: group.assetIdentifiers)
             updateImageCache()
         }) {
             DuplicateGroupReviewView(
