@@ -69,6 +69,10 @@ struct SwipeCardView: View {
                     onBackgroundRemoved: {
                         showingPhotoActions = false
                         showActionConfirmation("背景を削除した写真を保存しました")
+                    },
+                    onAutoEnhanced: {
+                        showingPhotoActions = false
+                        showActionConfirmation("自動補正した写真を保存しました")
                     }
                 )
             }

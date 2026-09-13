@@ -9,6 +9,7 @@ struct PhotoActionsSheet: View {
     let onShare: () -> Void
     let onAlbumAdded: (String) -> Void
     let onBackgroundRemoved: () -> Void
+    let onAutoEnhanced: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -42,8 +43,22 @@ struct PhotoActionsSheet: View {
                         )
                     }
 
+                    if asset.mediaType == .image {
+                        NavigationLink {
+                            AutoEnhancementView(asset: asset, onSaved: onAutoEnhanced)
+                        } label: {
+                            actionTile(title: "自動補正", icon: "wand.and.sparkles")
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        restrictedTile(
+                            title: "自動補正",
+                            icon: "wand.and.sparkles",
+                            restriction: "写真のみ"
+                        )
+                    }
+
 #if DEBUG
-                    unavailableTile(title: "自動補正", icon: "wand.and.sparkles")
                     unavailableTile(title: "圧縮する", icon: "arrow.down.right.and.arrow.up.left")
 #endif
 
