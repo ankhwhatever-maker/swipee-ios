@@ -94,7 +94,6 @@ struct DuplicateGroupSwipeView: View {
                 group: group,
                 batchAssetIdentifiers: reviewingAssetIdentifiers,
                 isFinalBatch: reviewingFinalBatch,
-                onClose: finishReviewAndReturnToList,
                 onPrimaryAction: finishReviewFromPrimaryAction
             )
         }

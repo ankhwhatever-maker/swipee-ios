@@ -31,7 +31,6 @@ struct ReviewSessionFlowView: View {
                     deletedCount: result.deletedCount,
                     totalDeletedCount: result.totalDeletedCount,
                     primaryButtonTitle: "もう\(ReviewSessionStore.targetCount)枚見る",
-                    onClose: close,
                     onPrimaryAction: closeAndContinue
                 )
             } else {
@@ -149,11 +148,6 @@ struct ReviewSessionFlowView: View {
             }
             isDeleting = false
         }
-    }
-
-    private func close() {
-        dismiss()
-        onContinue()
     }
 
     private func closeAndContinue() {

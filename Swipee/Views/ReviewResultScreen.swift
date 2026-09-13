@@ -6,23 +6,12 @@ struct ReviewResultScreen: View {
     let deletedCount: Int
     let totalDeletedCount: Int
     let primaryButtonTitle: String
-    let onClose: () -> Void
     let onPrimaryAction: () -> Void
 
     var body: some View {
         ZStack {
             Color(red: 0.075, green: 0.067, blue: 0.063).ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.title.bold())
-                            .frame(width: 52, height: 52)
-                    }
-                    .foregroundStyle(.white)
-                    .accessibilityLabel("閉じる")
-                    Spacer()
-                }
                 Spacer(minLength: 36)
                 Text(title).font(.title2.bold())
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
