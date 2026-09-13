@@ -46,10 +46,26 @@ final class PendingDeletionStoreTests: XCTestCase {
     func testEnqueueDoesNotDuplicateAnAssetAcrossConditions() {
         let store = PendingDeletionStore(defaults: defaults)
         store.enqueue(assetIdentifier: "asset-1", sourceConditionKey: "condition-a")
+        let revisionAfterFirstEnqueue = store.revision
         store.enqueue(assetIdentifier: "asset-1", sourceConditionKey: "condition-b")
 
         XCTAssertEqual(store.records.count, 1)
         XCTAssertEqual(store.records.first?.sourceConditionKey, "condition-a")
+        XCTAssertEqual(store.revision, revisionAfterFirstEnqueue)
+    }
+
+    func testRevisionChangesOnlyWhenPendingDeletionsChange() {
+        let store = PendingDeletionStore(defaults: defaults)
+        XCTAssertEqual(store.revision, 0)
+
+        store.enqueue(assetIdentifier: "asset-1", sourceConditionKey: "condition-a")
+        XCTAssertEqual(store.revision, 1)
+
+        store.remove(assetIdentifiers: ["missing"])
+        XCTAssertEqual(store.revision, 1)
+
+        store.remove(assetIdentifier: "asset-1")
+        XCTAssertEqual(store.revision, 2)
     }
 
     func testRecordsPersistAcrossStoreInstances() {

@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class PendingDeletionStore: ObservableObject {
     @Published private(set) var records: [PendingDeletionRecord]
+    @Published private(set) var revision = 0
 
     private let defaults: UserDefaults
     private let key = "pendingDeletions.v1"
@@ -45,6 +46,7 @@ final class PendingDeletionStore: ObservableObject {
         )
         records.append(record)
         identifierSet.insert(assetIdentifier)
+        revision &+= 1
         persist()
         return record
     }
@@ -56,6 +58,7 @@ final class PendingDeletionStore: ObservableObject {
         }
         let record = records.remove(at: index)
         identifierSet.remove(assetIdentifier)
+        revision &+= 1
         persist()
         return record
     }
@@ -64,6 +67,7 @@ final class PendingDeletionStore: ObservableObject {
         guard !records.isEmpty else { return }
         records.removeAll()
         identifierSet.removeAll()
+        revision &+= 1
         persist()
     }
 
@@ -73,6 +77,7 @@ final class PendingDeletionStore: ObservableObject {
         records.removeAll { assetIdentifiers.contains($0.assetIdentifier) }
         if records.count != previousCount {
             identifierSet.subtract(assetIdentifiers)
+            revision &+= 1
             persist()
         }
     }
@@ -83,6 +88,7 @@ final class PendingDeletionStore: ObservableObject {
         guard !removed.isEmpty else { return [] }
         records.removeAll { !validAssetIdentifiers.contains($0.assetIdentifier) }
         identifierSet.formIntersection(validAssetIdentifiers)
+        revision &+= 1
         persist()
         return removed
     }

@@ -18,6 +18,7 @@ struct OrganizeView: View {
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
     @State private var loadedConditionKey: String?
+    @State private var loadedPendingDeletionRevision: Int?
     private let actionOverlayHeight: CGFloat = 76
 
     private struct RestoringCard {
@@ -28,7 +29,7 @@ struct OrganizeView: View {
     private var isDeckVisible: Bool {
         switch library.authorizationStatus {
         case .authorized, .limited:
-            return !library.isLoading && !session.isComplete && !library.candidates.isEmpty
+            return !session.isComplete && !library.candidates.isEmpty
         default:
             return false
         }
@@ -85,7 +86,7 @@ struct OrganizeView: View {
         case .notDetermined: ProgressView("写真へのアクセスを確認しています")
         case .denied, .restricted: PhotoAccessRequiredView()
         default:
-            if library.isLoading { ProgressView() }
+            if library.isLoading && library.candidates.isEmpty { ProgressView() }
             else if session.isComplete { sessionReadyState }
             else if library.candidates.isEmpty { emptyState }
             else { deck }
@@ -112,7 +113,7 @@ struct OrganizeView: View {
                         SwipeCardView(
                             asset: asset,
                             manager: library.imageManager,
-                            isInteractive: !processing && restoration == nil,
+                            isInteractive: !processing && !library.isLoading && restoration == nil,
                             allowsNetworkAccess: true,
                             maximumSize: proxy.size,
                             metadataBottomInset: 0,
@@ -137,7 +138,7 @@ struct OrganizeView: View {
 
             SwipeActionControls(
                 activeDecision: activeSwipeDecision,
-                isProcessing: processing,
+                isProcessing: processing || library.isLoading,
                 canUndo: canUndoLastAction,
                 onDelete: { requestedDecision = .trash },
                 onKeep: { requestedDecision = .keep },
@@ -151,6 +152,11 @@ struct OrganizeView: View {
         ZStack {
             progressPill
             HStack {
+                if library.isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .accessibilityLabel("写真を更新中")
+                }
                 Spacer()
                 filterButton
             }
@@ -180,6 +186,7 @@ struct OrganizeView: View {
                 .overlay { Circle().stroke(deckControlBorder, lineWidth: 1) }
         }
         .foregroundStyle(isDeckVisible ? Color.white : Color.primary)
+        .disabled(library.isLoading)
         .accessibilityLabel("表示する写真")
     }
 
@@ -217,7 +224,7 @@ struct OrganizeView: View {
         session.importPendingRecords(
             pendingDeletions.records.filter { !$0.sourceConditionKey.hasPrefix("duplicates|") }
         )
-        await reload()
+        await reloadIfNeeded()
         if session.isComplete { showingSessionReview = true }
     }
     private func reload() async {
@@ -229,22 +236,26 @@ struct OrganizeView: View {
         )
         if settings.value.conditionKey == selectedSettings.conditionKey {
             loadedConditionKey = selectedSettings.conditionKey
+            loadedPendingDeletionRevision = pendingDeletions.revision
         }
     }
 
     private func reloadIfNeeded() async {
         guard library.authorizationStatus == .authorized || library.authorizationStatus == .limited else { return }
-        guard loadedConditionKey != settings.value.conditionKey else { return }
+        guard loadedConditionKey != settings.value.conditionKey ||
+                loadedPendingDeletionRevision != pendingDeletions.revision else { return }
         await reload()
     }
     private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
-        guard !processing, library.candidates.first?.localIdentifier == asset.localIdentifier else { return false }
+        guard !processing, !library.isLoading,
+              library.candidates.first?.localIdentifier == asset.localIdentifier else { return false }
         processing = true
         if decision == .trash {
             pendingDeletions.enqueue(
                 assetIdentifier: asset.localIdentifier,
                 sourceConditionKey: settings.value.conditionKey
             )
+            loadedPendingDeletionRevision = pendingDeletions.revision
             session.append(
                 assetIdentifier: asset.localIdentifier,
                 sourceConditionKey: settings.value.conditionKey,
@@ -294,13 +305,14 @@ struct OrganizeView: View {
     }
 
     private func undoLastAction() {
-        guard !processing,
+        guard !processing, !library.isLoading,
               let action = session.items.last else { return }
         processing = true
         Task {
             guard let asset = library.fetchAssets(localIdentifiers: [action.assetIdentifier]).first else {
                 if action.decision == .trash {
                     pendingDeletions.remove(assetIdentifier: action.assetIdentifier)
+                    loadedPendingDeletionRevision = pendingDeletions.revision
                 } else {
                     history.remove(assetIdentifier: action.assetIdentifier, conditionKey: action.sourceConditionKey)
                 }
@@ -315,6 +327,7 @@ struct OrganizeView: View {
                     processing = false
                     return
                 }
+                loadedPendingDeletionRevision = pendingDeletions.revision
             case .keep:
                 guard history.remove(assetIdentifier: action.assetIdentifier, conditionKey: action.sourceConditionKey) != nil else {
                     processing = false

@@ -55,8 +55,6 @@ struct RootView: View {
                 .tag(AppTab.organize)
 
             NavigationStack { DuplicatesView() }
-                .toolbarBackground(Color.swipeeSurface, for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
                 .tabItem {
                     Label("重複", systemImage: "square.on.square")
                         .environment(
@@ -67,8 +65,6 @@ struct RootView: View {
                 .tag(AppTab.duplicates)
 
             NavigationStack { SettingsView() }
-                .toolbarBackground(Color.swipeeSurface, for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
                 .tabItem {
                     Label("設定", systemImage: "gearshape")
                         .environment(
@@ -78,6 +74,8 @@ struct RootView: View {
                 }
                 .tag(AppTab.settings)
         }
+        .toolbarBackground(Color(uiColor: .systemBackground), for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .task(id: automaticDuplicateAnalysisTrigger) {
             guard scenePhase == .active else { return }
             photoLibrary.refreshAuthorizationStatus()
