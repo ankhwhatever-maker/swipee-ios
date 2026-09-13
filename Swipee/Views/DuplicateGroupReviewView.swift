@@ -47,6 +47,7 @@ struct DuplicateGroupReviewView: View {
                     title: "重複",
                     keptCount: result.keptCount,
                     deletedCount: result.deletedCount,
+                    deletedDataSize: nil,
                     totalDeletedCount: result.totalDeletedCount,
                     primaryButtonTitle: isFinalBatch ? "重複候補へ戻る" : "次の写真を見る",
                     onPrimaryAction: onPrimaryAction

@@ -5,6 +5,7 @@ struct ReviewSessionResult {
     let reviewedCount: Int
     let keptCount: Int
     let deletedCount: Int
+    let deletedDataSize: Int64?
     let totalDeletedCount: Int
 }
 
@@ -29,6 +30,7 @@ struct ReviewSessionFlowView: View {
                     title: "今回の整理",
                     keptCount: result.keptCount,
                     deletedCount: result.deletedCount,
+                    deletedDataSize: result.deletedDataSize,
                     totalDeletedCount: result.totalDeletedCount,
                     primaryButtonTitle: "もう\(ReviewSessionStore.targetCount)枚見る",
                     onPrimaryAction: closeAndContinue
@@ -120,6 +122,13 @@ struct ReviewSessionFlowView: View {
         isDeleting = true
         Task {
             do {
+                let deletedDataSize: Int64?
+                if assetsToDelete.isEmpty {
+                    deletedDataSize = nil
+                } else {
+                    deletedDataSize = try? await PhotoAssetSizeService.shared.totalSize(for: assetsToDelete)
+                }
+
                 if !assetsToDelete.isEmpty {
                     try await library.deleteAssets(assetsToDelete)
                     for item in deletionItems {
@@ -139,6 +148,7 @@ struct ReviewSessionFlowView: View {
                     reviewedCount: reviewedCount,
                     keptCount: reviewedCount - deletedCount,
                     deletedCount: deletedCount,
+                    deletedDataSize: deletedDataSize,
                     totalDeletedCount: session.totalDeletedCount
                 )
             } catch {

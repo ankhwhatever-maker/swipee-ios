@@ -4,6 +4,7 @@ struct ReviewResultScreen: View {
     let title: String
     let keptCount: Int
     let deletedCount: Int
+    let deletedDataSize: Int64?
     let totalDeletedCount: Int
     let primaryButtonTitle: String
     let onPrimaryAction: () -> Void
@@ -14,13 +15,8 @@ struct ReviewResultScreen: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 36)
                 Text(title).font(.title2.bold())
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(deletedCount)")
-                        .font(.system(size: 104, weight: .bold, design: .rounded))
-                        .minimumScaleFactor(0.65)
-                    Text("枚").font(.system(size: 44, weight: .bold, design: .rounded))
-                }
-                .padding(.top, 12)
+                primaryResult
+                    .padding(.top, 12)
                 Text(deletedCount == 0 ? "削除はありません" : "削除しました")
                     .font(.title2.bold())
                 HStack(spacing: 14) {
@@ -54,6 +50,23 @@ struct ReviewResultScreen: View {
             .padding(.horizontal, 28)
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var primaryResult: some View {
+        if deletedCount > 0, let deletedDataSize, deletedDataSize > 0 {
+            Text(ByteCountFormatter.string(fromByteCount: deletedDataSize, countStyle: .file))
+                .font(.system(size: 80, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(deletedCount)")
+                    .font(.system(size: 104, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.65)
+                Text("枚").font(.system(size: 44, weight: .bold, design: .rounded))
+            }
+        }
     }
 
     private func resultCard(count: Int, title: String, icon: String, color: Color) -> some View {
