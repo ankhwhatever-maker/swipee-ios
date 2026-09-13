@@ -57,7 +57,6 @@ struct RootView: View {
             NavigationStack { DuplicatesView() }
                 .toolbarBackground(Color.swipeeSurface, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
-                .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label("重複", systemImage: "square.on.square")
                         .environment(
@@ -70,7 +69,6 @@ struct RootView: View {
             NavigationStack { SettingsView() }
                 .toolbarBackground(Color.swipeeSurface, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
-                .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label("設定", systemImage: "gearshape")
                         .environment(
