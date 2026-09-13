@@ -4,6 +4,7 @@ import SwiftUI
 struct DuplicateGroupResult {
     let keptCount: Int
     let deletedCount: Int
+    let deletedDataSize: Int64?
     let totalDeletedCount: Int
 }
 
@@ -47,7 +48,7 @@ struct DuplicateGroupReviewView: View {
                     title: "重複",
                     keptCount: result.keptCount,
                     deletedCount: result.deletedCount,
-                    deletedDataSize: nil,
+                    deletedDataSize: result.deletedDataSize,
                     totalDeletedCount: result.totalDeletedCount,
                     primaryButtonTitle: isFinalBatch ? "重複候補へ戻る" : "次の写真を見る",
                     onPrimaryAction: onPrimaryAction
@@ -134,6 +135,13 @@ struct DuplicateGroupReviewView: View {
         isDeleting = true
         Task {
             do {
+                let deletedDataSize: Int64?
+                if assetsToDelete.isEmpty {
+                    deletedDataSize = nil
+                } else {
+                    deletedDataSize = try? await PhotoAssetSizeService.shared.totalSize(for: assetsToDelete)
+                }
+
                 if !assetsToDelete.isEmpty {
                     try await library.deleteAssets(assetsToDelete)
                     pendingDeletions.remove(assetIdentifiers: deletionIdentifiers)
@@ -153,6 +161,7 @@ struct DuplicateGroupReviewView: View {
                 result = DuplicateGroupResult(
                     keptCount: snapshot.count - deleted,
                     deletedCount: deleted,
+                    deletedDataSize: deletedDataSize,
                     totalDeletedCount: reviewSession.totalDeletedCount
                 )
             } catch {
