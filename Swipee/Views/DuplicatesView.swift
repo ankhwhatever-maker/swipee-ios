@@ -61,7 +61,6 @@ struct DuplicatesView: View {
     private var groupGrid: some View {
         ScrollView {
             VStack(spacing: 12) {
-                analysisSummary
                 if library.authorizationStatus == .limited {
                     Label("選択した写真のみ解析しています", systemImage: "photo.badge.checkmark")
                         .font(.caption)
@@ -99,18 +98,6 @@ struct DuplicatesView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(24)
-    }
-
-    private var analysisSummary: some View {
-        HStack(spacing: 8) {
-            Label("候補\(analysis.indexedCount)枚を画像確認済み", systemImage: "checkmark.circle")
-            if analysis.unavailableCount > 0 {
-                Text("・ iCloud上の\(analysis.unavailableCount)枚は未確認")
-            }
-            Spacer()
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 
     private var emptyState: some View {

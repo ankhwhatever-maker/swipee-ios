@@ -8,7 +8,7 @@ struct SettingsView: View {
     var body: some View {
         List {
             Section("写真の候補") {
-                Button { showingFilters = true } label: { settingsRow("line.3.horizontal.decrease.circle", "表示する写真", detail: settings.value.summary, chevron: true) }.foregroundStyle(.primary)
+                Button { showingFilters = true } label: { settingsRow("slider.horizontal.3", "表示する写真", detail: settings.value.summary, chevron: true) }.foregroundStyle(.primary)
             }
             Section("Swipee") {
                 Button { message = .premium } label: { settingsRow("sparkles", "プレミアム", detail: "準備中", chevron: true) }.foregroundStyle(.primary)
