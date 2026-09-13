@@ -281,15 +281,8 @@ struct OrganizeView: View {
     }
 
     private var sessionReadyState: some View {
-        ContentUnavailableView {
-            Label("\(ReviewSessionStore.targetCount)枚見ました", systemImage: "photo.stack")
-        } description: {
-            Text("削除する写真を確認して、今回の整理を終えましょう。")
-        } actions: {
-            Button("今回の\(ReviewSessionStore.targetCount)枚を確認") {
-                showingSessionReview = true
-            }
-            .buttonStyle(.borderedProminent)
+        ReviewBatchReadyScreen(itemCount: ReviewSessionStore.targetCount) {
+            showingSessionReview = true
         }
     }
 

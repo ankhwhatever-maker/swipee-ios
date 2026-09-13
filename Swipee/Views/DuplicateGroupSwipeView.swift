@@ -84,9 +84,15 @@ struct DuplicateGroupSwipeView: View {
 
     var body: some View {
         ZStack {
-            deckBackground
-                .ignoresSafeArea()
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
+            Group {
+                if shouldReviewCurrentBatch {
+                    Color.swipeeBackground
+                } else {
+                    deckBackground
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
+                }
+            }
+            .ignoresSafeArea()
             Group {
                 if assets.isEmpty {
                     ProgressView().tint(.white)
@@ -263,18 +269,9 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private var readyState: some View {
-        ContentUnavailableView {
-            Label("この\(currentBatchItems.count)枚を見ました", systemImage: "square.on.square")
-        } description: {
-            Text("削除する写真を最後に確認できます。")
-        } actions: {
-            if canUndo {
-                Button("直前の操作を戻す") { undoLastAction() }
-            }
-            Button("\(currentBatchItems.count)枚を確認") { prepareReview() }
-                .buttonStyle(.borderedProminent)
+        ReviewBatchReadyScreen(itemCount: currentBatchItems.count) {
+            prepareReview()
         }
-        .foregroundStyle(.white)
     }
 
     private var progressPill: some View {
