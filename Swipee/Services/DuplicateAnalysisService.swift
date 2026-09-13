@@ -37,7 +37,6 @@ final class DuplicateAnalysisService: ObservableObject {
 
     private static let automaticUnavailableRetryKey = "duplicateAnalysis.lastUnavailableRetry"
     private static let automaticUnavailableRetryInterval: TimeInterval = 24 * 60 * 60
-    private static let checkpointBatchSize = 25
 
     private struct LoadedState: Sendable {
         let records: [String: DuplicateAnalysisRecord]
@@ -162,51 +161,42 @@ final class DuplicateAnalysisService: ObservableObject {
     ) async {
         guard !assets.isEmpty || !deletedIdentifiers.isEmpty else { return }
 
-        if !deletedIdentifiers.isEmpty {
-            for identifier in deletedIdentifiers { records.removeValue(forKey: identifier) }
-            await rebuildSimilarityResults(affectedIdentifiers: deletedIdentifiers)
-            await persistAndWait()
+        // Keep this run isolated until every thumbnail has been processed. If the
+        // task is interrupted, the existing cache remains internally consistent and
+        // these assets are simply retried by the next incremental scan.
+        var updatedRecords: [String: DuplicateAnalysisRecord] = [:]
+        updatedRecords.reserveCapacity(assets.count)
+
+        for asset in assets {
             guard !Task.isCancelled else { return }
+            let image = await requestSmallImage(for: asset, manager: manager)
+            let signature: Signature?
+            if let image {
+                signature = await Self.signature(for: image)
+            } else {
+                signature = nil
+            }
+            updatedRecords[asset.localIdentifier] = DuplicateAnalysisRecord(
+                identifier: asset.localIdentifier,
+                pixelWidth: asset.pixelWidth,
+                pixelHeight: asset.pixelHeight,
+                creationTimestamp: asset.creationDate?.timeIntervalSince1970,
+                modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
+                burstIdentifier: asset.burstIdentifier,
+                differenceHash: signature?.differenceHash,
+                averageRed: signature?.averageRed,
+                averageGreen: signature?.averageGreen,
+                averageBlue: signature?.averageBlue
+            )
+            analyzedCount += 1
         }
 
-        var batchStart = 0
-        while batchStart < assets.count {
-            let batchEnd = min(batchStart + Self.checkpointBatchSize, assets.count)
-            var affectedIdentifiers: Set<String> = []
-
-            for asset in assets[batchStart..<batchEnd] {
-                guard !Task.isCancelled else { break }
-                let identifier = asset.localIdentifier
-                affectedIdentifiers.insert(identifier)
-                let image = await requestSmallImage(for: asset, manager: manager)
-                let signature: Signature?
-                if let image {
-                    signature = await Self.signature(for: image)
-                } else {
-                    signature = nil
-                }
-                records[identifier] = DuplicateAnalysisRecord(
-                    identifier: identifier,
-                    pixelWidth: asset.pixelWidth,
-                    pixelHeight: asset.pixelHeight,
-                    creationTimestamp: asset.creationDate?.timeIntervalSince1970,
-                    modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
-                    burstIdentifier: asset.burstIdentifier,
-                    differenceHash: signature?.differenceHash,
-                    averageRed: signature?.averageRed,
-                    averageGreen: signature?.averageGreen,
-                    averageBlue: signature?.averageBlue
-                )
-                analyzedCount += 1
-            }
-
-            if !affectedIdentifiers.isEmpty {
-                await rebuildSimilarityResults(affectedIdentifiers: affectedIdentifiers)
-                await persistAndWait()
-            }
-            guard !Task.isCancelled else { return }
-            batchStart = batchEnd
-        }
+        guard !Task.isCancelled else { return }
+        let affectedIdentifiers = deletedIdentifiers.union(updatedRecords.keys)
+        for identifier in deletedIdentifiers { records.removeValue(forKey: identifier) }
+        records.merge(updatedRecords) { _, updated in updated }
+        await rebuildSimilarityResults(affectedIdentifiers: affectedIdentifiers)
+        await persistAndWait()
     }
 
     private func rebuildSimilarityResults(affectedIdentifiers: Set<String>) async {
