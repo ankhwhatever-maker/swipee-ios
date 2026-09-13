@@ -8,6 +8,7 @@ struct DuplicatesView: View {
     @EnvironmentObject private var library: PhotoLibraryService
 
     @State private var assetsByIdentifier: [String: PHAsset] = [:]
+    @State private var isManualAnalysisRunning = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -28,9 +29,15 @@ struct DuplicatesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("写真を確認", systemImage: "arrow.clockwise") {
-                        Task { await analyze() }
+                    Button {
+                        Task { await analyze(manual: true) }
+                    } label: {
+                        Label(
+                            isManualAnalysisRunning ? "確認中…" : "写真を確認",
+                            systemImage: "arrow.clockwise"
+                        )
                     }
+                    .disabled(isManualAnalysisRunning)
                     Button("確認済みを再表示", systemImage: "eye") {
                         reviewed.clear()
                     }
@@ -74,7 +81,6 @@ struct DuplicatesView: View {
     private var groupGrid: some View {
         ScrollView {
             VStack(spacing: 12) {
-                if analysis.isAnalyzing { compactProgress }
                 analysisSummary
                 if library.authorizationStatus == .limited {
                     Label("選択した写真のみ解析しています", systemImage: "photo.badge.checkmark")
@@ -115,15 +121,6 @@ struct DuplicatesView: View {
         .padding(24)
     }
 
-    private var compactProgress: some View {
-        VStack(spacing: 5) {
-            ProgressView(value: Double(analysis.analyzedCount), total: Double(max(analysis.totalCount, 1)))
-            Text("候補を確認中 \(analysis.analyzedCount) / \(analysis.totalCount)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private var analysisSummary: some View {
         HStack(spacing: 8) {
             Label("候補\(analysis.indexedCount)枚を画像確認済み", systemImage: "checkmark.circle")
@@ -142,10 +139,17 @@ struct DuplicatesView: View {
         } description: {
             Text("PhotoKitの情報で絞り込んだ写真から、よく似た組み合わせは見つかりませんでした。")
         } actions: {
-            Button("写真を確認") {
-                Task { await analyze() }
+            Button {
+                Task { await analyze(manual: true) }
+            } label: {
+                if isManualAnalysisRunning {
+                    Label("確認中…", systemImage: "arrow.clockwise")
+                } else {
+                    Text("写真を確認")
+                }
             }
             .buttonStyle(.borderedProminent)
+            .disabled(isManualAnalysisRunning)
         }
     }
 
@@ -155,7 +159,14 @@ struct DuplicatesView: View {
         loadAssets()
     }
 
-    private func analyze() async {
+    private func analyze(manual: Bool = false) async {
+        if manual {
+            guard !isManualAnalysisRunning else { return }
+            isManualAnalysisRunning = true
+        }
+        defer {
+            if manual { isManualAnalysisRunning = false }
+        }
         await analysis.analyzeIfNeeded(
             library: library,
             pendingDeletions: pendingDeletions,
