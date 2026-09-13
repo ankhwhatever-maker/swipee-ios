@@ -28,7 +28,7 @@ struct ReviewSessionFlowView: View {
         Group {
             if let result {
                 ReviewResultScreen(
-                    title: "今回の整理",
+                    title: "整理結果",
                     keptCount: result.keptCount,
                     deletedCount: result.deletedCount,
                     deletedDataSize: result.deletedDataSize,
@@ -41,7 +41,7 @@ struct ReviewSessionFlowView: View {
             }
         }
         .task { loadAssets() }
-        .alert("操作を完了できませんでした", isPresented: Binding(
+        .alert("写真を削除できませんでした", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -55,8 +55,8 @@ struct ReviewSessionFlowView: View {
     private var reviewScreen: some View {
         ReviewBatchScreen(
             navigationTitle: "整理内容の確認",
-            heading: "今回見た写真",
-            description: "削除する写真を最後に確認できます。写真をタップすると選択を切り替えられます。",
+            heading: "削除対象の確認",
+            description: "写真をタップすると、削除候補とキープを切り替えられます。",
             assets: assets,
             expectedItemCount: session.items.count,
             keptCount: keptCount,

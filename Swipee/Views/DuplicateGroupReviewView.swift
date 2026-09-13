@@ -47,7 +47,7 @@ struct DuplicateGroupReviewView: View {
         Group {
             if let result {
                 ReviewResultScreen(
-                    title: "重複",
+                    title: "整理結果",
                     keptCount: result.keptCount,
                     deletedCount: result.deletedCount,
                     deletedDataSize: result.deletedDataSize,
@@ -64,7 +64,7 @@ struct DuplicateGroupReviewView: View {
             }
         }
         .task { loadAssets() }
-        .alert("操作を完了できませんでした", isPresented: Binding(
+        .alert("写真を削除できませんでした", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -78,7 +78,7 @@ struct DuplicateGroupReviewView: View {
     private var reviewScreen: some View {
         ReviewBatchScreen(
             navigationTitle: "重複内容の確認",
-            heading: "この重複グループ",
+            heading: "削除対象の確認",
             description: "写真をタップすると、削除候補とキープを切り替えられます。",
             assets: assets,
             expectedItemCount: items.count,

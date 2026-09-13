@@ -118,7 +118,7 @@ struct DuplicateGroupSwipeView: View {
                 onPrimaryAction: finishReviewFromPrimaryAction
             )
         }
-        .alert("操作を完了できませんでした", isPresented: Binding(
+        .alert("お気に入りを変更できませんでした", isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.errorMessage = nil } }
         )) {

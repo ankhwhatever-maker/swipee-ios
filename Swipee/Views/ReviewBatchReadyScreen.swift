@@ -11,7 +11,7 @@ struct ReviewBatchReadyScreen: View {
         } description: {
             Text("削除する写真を確認して、今回の整理を終えましょう。")
         } actions: {
-            Button("今回の\(itemCount)枚を確認", action: onReview)
+            Button("削除対象を確認", action: onReview)
                 .buttonStyle(.borderedProminent)
         }
         .overlay(alignment: .topLeading) {

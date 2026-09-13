@@ -91,7 +91,7 @@ struct DuplicatesView: View {
         VStack(spacing: 16) {
             ProgressView(value: Double(analysis.analyzedCount), total: Double(max(analysis.totalCount, 1)))
                 .frame(maxWidth: 240)
-            Text("重複しそうな写真を確認しています")
+            Text("似ている写真を探しています")
                 .font(.headline)
             Text("\(analysis.analyzedCount) / \(analysis.totalCount)")
                 .font(.subheadline.monospacedDigit())
@@ -104,15 +104,15 @@ struct DuplicatesView: View {
         ContentUnavailableView {
             Label("重複候補はありません", systemImage: "square.on.square")
         } description: {
-            Text("PhotoKitの情報で絞り込んだ写真から、よく似た組み合わせは見つかりませんでした。")
+            Text("よく似た写真の組み合わせは見つかりませんでした。")
         } actions: {
             Button {
                 Task { await analyze(manual: true) }
             } label: {
                 if isManualAnalysisRunning {
-                    Label("確認中…", systemImage: "arrow.clockwise")
+                    Label("検索中…", systemImage: "arrow.clockwise")
                 } else {
-                    Text("写真を確認")
+                    Text("重複写真を探す")
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -122,9 +122,9 @@ struct DuplicatesView: View {
 
     private var allReviewedState: some View {
         ContentUnavailableView {
-            Label("すべての重複候補を確認しました", systemImage: "checkmark.circle")
+            Label("すべての重複候補を整理しました", systemImage: "checkmark.circle")
         } description: {
-            Text("新しい写真は自動で確認されます。")
+            Text("新しい写真から重複候補を自動で探します。")
         } actions: {
             Button("確認済みの候補をもう一度見る") {
                 reviewed.clear()

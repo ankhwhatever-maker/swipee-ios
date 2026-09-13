@@ -192,10 +192,10 @@ struct OrganizeView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("この条件の未確認写真は、\nすべて見ました", systemImage: "rectangle.stack.badge.checkmark")
+            Label("この条件の写真はすべて整理しました", systemImage: "rectangle.stack.badge.checkmark")
         } description: { Text("表示する写真を変更すると、別の候補を確認できます。") } actions: {
             if !session.items.isEmpty {
-                Button("今回の\(session.items.count)枚を確認") {
+                Button("削除対象を確認") {
                     showingSessionReview = true
                 }
                 .buttonStyle(.borderedProminent)
