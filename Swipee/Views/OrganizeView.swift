@@ -10,7 +10,6 @@ struct OrganizeView: View {
     @EnvironmentObject private var library: PhotoLibraryService
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var showingFilters = false
     @State private var showingSessionReview = false
     @State private var processing = false
@@ -35,42 +34,6 @@ struct OrganizeView: View {
         }
     }
 
-    private var organizeBackground: LinearGradient {
-        let colors: [Color]
-        let startPoint: UnitPoint
-        let endPoint: UnitPoint
-
-        if !isDeckVisible {
-            colors = [.swipeeBackground, .swipeeBackground]
-            startPoint = .topLeading
-            endPoint = .bottomTrailing
-        } else {
-            switch activeSwipeDecision {
-            case .trash:
-                colors = [
-                    Color(red: 0.08, green: 0.05, blue: 0.12),
-                    Color(red: 0.24, green: 0.15, blue: 0.34)
-                ]
-                startPoint = .topTrailing
-                endPoint = .bottomLeading
-            case .keep:
-                colors = [
-                    Color(red: 0.02, green: 0.10, blue: 0.06),
-                    Color(red: 0.10, green: 0.31, blue: 0.20)
-                ]
-                startPoint = .topLeading
-                endPoint = .bottomTrailing
-            default:
-                let restingColor = Color(red: 0.043, green: 0.043, blue: 0.051)
-                colors = [restingColor, restingColor]
-                startPoint = .topLeading
-                endPoint = .bottomTrailing
-            }
-        }
-
-        return LinearGradient(colors: colors, startPoint: startPoint, endPoint: endPoint)
-    }
-
     private var deckControlBackground: Color {
         isDeckVisible ? .white.opacity(0.12) : .swipeeElevatedSurface
     }
@@ -81,9 +44,12 @@ struct OrganizeView: View {
 
     var body: some View {
         ZStack {
-            organizeBackground
+            SwipeDeckBackground(
+                activeDecision: activeSwipeDecision,
+                isDeckVisible: isDeckVisible,
+                reduceMotion: reduceMotion
+            )
                 .ignoresSafeArea()
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
             content.padding(.horizontal, 10).padding(.bottom, 6)
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -140,9 +106,6 @@ struct OrganizeView: View {
                         let restoration = restoringCard?.asset.localIdentifier == asset.localIdentifier
                             ? restoringCard
                             : nil
-                        let restoreOffset = restoration.map {
-                            restorationOffset(for: $0.decision, in: proxy.size)
-                        } ?? CGSize.zero
                         SwipeCardView(
                             asset: asset,
                             manager: library.imageManager,
@@ -158,16 +121,25 @@ struct OrganizeView: View {
                             await decide($0, asset: asset)
                         }
                         .id(asset.localIdentifier)
-                        .offset(restoreOffset)
-                        .rotationEffect(restoration.map { restorationRotation(for: $0.decision) } ?? .zero)
-                        .opacity(restoration != nil && reduceMotion ? restorationProgress : 1)
-                        .accessibilityHidden(restoration != nil)
+                        .cardRestorationEffect(
+                            decision: restoration?.decision,
+                            progress: restorationProgress,
+                            availableSize: proxy.size,
+                            reduceMotion: reduceMotion
+                        )
                         .transition(.opacity)
                     }
                 }
             }
 
-            actionControls
+            SwipeActionControls(
+                activeDecision: activeSwipeDecision,
+                isProcessing: processing,
+                canUndo: canUndoLastAction,
+                onDelete: { requestedDecision = .trash },
+                onKeep: { requestedDecision = .keep },
+                onUndo: undoLastAction
+            )
                 .frame(height: actionOverlayHeight)
         }
     }
@@ -182,21 +154,6 @@ struct OrganizeView: View {
         }
         .frame(height: 58)
         .padding(.horizontal, 4)
-    }
-
-    private var actionControls: some View {
-        ZStack {
-            HStack(spacing: 32) {
-                actionButton("削除", color: .swipeeDelete, decision: .trash) { requestedDecision = .trash }
-                actionButton("キープ", color: .swipeeKeep, decision: .keep) { requestedDecision = .keep }
-            }
-            HStack {
-                undoButton
-                    .opacity(activeSwipeDecision == nil ? 1 : 0)
-                    .scaleEffect(activeSwipeDecision == nil ? 1 : 0.72)
-                Spacer()
-            }
-        }
     }
 
     private var progressPill: some View {
@@ -221,46 +178,6 @@ struct OrganizeView: View {
         }
         .foregroundStyle(isDeckVisible ? Color.white : Color.primary)
         .accessibilityLabel("表示する写真")
-    }
-
-    private var undoButton: some View {
-        Button {
-            undoLastAction()
-        } label: {
-            Image(systemName: "arrow.uturn.backward")
-                .font(.subheadline.bold())
-                .frame(width: 34, height: 34)
-                .background(deckControlBackground, in: Circle())
-                .overlay { Circle().stroke(deckControlBorder) }
-                .shadow(color: .black.opacity(!isDeckVisible && colorScheme == .light && canUndoLastAction ? 0.08 : 0), radius: 5, y: 2)
-                .frame(width: 44, height: 44)
-        }
-        .foregroundStyle(isDeckVisible ? Color.white.opacity(0.82) : Color.secondary)
-        .opacity(canUndoLastAction ? 1 : 0.28)
-        .disabled(processing || !canUndoLastAction)
-        .accessibilityLabel("直前の操作を戻す")
-        .accessibilityHint("直前に操作した写真をカードへ戻します")
-    }
-
-    private func actionButton(
-        _ title: String,
-        color: Color,
-        decision: SwipeDecision,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline.bold())
-                .frame(width: 86, height: 54)
-                .background(deckControlBackground, in: Capsule())
-                .overlay { Capsule().stroke(deckControlBorder) }
-                .foregroundStyle(color)
-                .shadow(color: .black.opacity(!isDeckVisible && colorScheme == .light ? 0.1 : 0), radius: 8, y: 4)
-        }
-        .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
-        .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
-        .disabled(processing)
-        .accessibilityLabel(title)
     }
 
     private var emptyState: some View {
@@ -438,47 +355,15 @@ struct OrganizeView: View {
         let feedback = UIImpactFeedbackGenerator(style: .light)
         feedback.prepare()
         restoringCard = RestoringCard(asset: asset, decision: decision)
-        restorationProgress = 0
         library.restoreCandidate(asset)
-
-        // Give SwiftUI one render pass at the off-screen position before animating home.
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(16))
-        if reduceMotion {
-            withAnimation(.easeOut(duration: 0.18)) { restorationProgress = 1 }
-            try? await Task.sleep(for: .milliseconds(180))
-        } else {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
-                restorationProgress = 1
-            }
-            try? await Task.sleep(for: .milliseconds(500))
-        }
+        await CardRestorationAnimation.run(
+            progress: $restorationProgress,
+            reduceMotion: reduceMotion
+        )
 
         feedback.impactOccurred()
         restoringCard = nil
         restorationProgress = 0
     }
 
-    private func restorationOffset(for decision: SwipeDecision, in size: CGSize) -> CGSize {
-        guard !reduceMotion else { return .zero }
-        let remaining = 1 - restorationProgress
-        switch decision {
-        case .trash:
-            return CGSize(width: -max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
-        case .keep:
-            return CGSize(width: max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
-        case .favorite:
-            return CGSize(width: 0, height: -max(size.height * 1.15, 620) * remaining)
-        }
-    }
-
-    private func restorationRotation(for decision: SwipeDecision) -> Angle {
-        guard !reduceMotion else { return .zero }
-        let remaining = 1 - restorationProgress
-        switch decision {
-        case .trash: return .degrees(-10 * remaining)
-        case .keep: return .degrees(10 * remaining)
-        case .favorite: return .zero
-        }
-    }
 }

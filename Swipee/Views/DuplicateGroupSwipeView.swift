@@ -9,7 +9,6 @@ struct DuplicateGroupSwipeView: View {
     @EnvironmentObject private var library: PhotoLibraryService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     let group: DuplicatePhotoGroup
 
@@ -53,47 +52,14 @@ struct DuplicateGroupSwipeView: View {
             && (currentBatchItems.count >= batchSize || remainingAssets.isEmpty)
     }
 
-    private var deckBackground: LinearGradient {
-        let colors: [Color]
-        let startPoint: UnitPoint
-        let endPoint: UnitPoint
-
-        switch activeSwipeDecision {
-        case .trash:
-            colors = [
-                Color(red: 0.08, green: 0.05, blue: 0.12),
-                Color(red: 0.24, green: 0.15, blue: 0.34)
-            ]
-            startPoint = .topTrailing
-            endPoint = .bottomLeading
-        case .keep:
-            colors = [
-                Color(red: 0.02, green: 0.10, blue: 0.06),
-                Color(red: 0.10, green: 0.31, blue: 0.20)
-            ]
-            startPoint = .topLeading
-            endPoint = .bottomTrailing
-        default:
-            let restingColor = Color(red: 0.043, green: 0.043, blue: 0.051)
-            colors = [restingColor, restingColor]
-            startPoint = .topLeading
-            endPoint = .bottomTrailing
-        }
-
-        return LinearGradient(colors: colors, startPoint: startPoint, endPoint: endPoint)
-    }
-
     var body: some View {
         ZStack {
-            Group {
-                if shouldReviewCurrentBatch || (hasLoadedAssets && assets.isEmpty) {
-                    Color.swipeeBackground
-                } else {
-                    deckBackground
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: activeSwipeDecision)
-                }
-            }
-            .ignoresSafeArea()
+            SwipeDeckBackground(
+                activeDecision: activeSwipeDecision,
+                isDeckVisible: !shouldReviewCurrentBatch && !(hasLoadedAssets && assets.isEmpty),
+                reduceMotion: reduceMotion
+            )
+                .ignoresSafeArea()
             Group {
                 if !hasLoadedAssets {
                     ProgressView().tint(.white)
@@ -178,16 +144,25 @@ struct DuplicateGroupSwipeView: View {
                             await decide($0, asset: asset)
                         }
                         .id(asset.localIdentifier)
-                        .offset(restoration.map { restorationOffset(for: $0.decision, in: proxy.size) } ?? .zero)
-                        .rotationEffect(restoration.map { restorationRotation(for: $0.decision) } ?? .zero)
-                        .opacity(restoration != nil && reduceMotion ? restorationProgress : 1)
-                        .accessibilityHidden(restoration != nil)
+                        .cardRestorationEffect(
+                            decision: restoration?.decision,
+                            progress: restorationProgress,
+                            availableSize: proxy.size,
+                            reduceMotion: reduceMotion
+                        )
                         .transition(.opacity)
                     }
                 }
             }
 
-            actionControls
+            SwipeActionControls(
+                activeDecision: activeSwipeDecision,
+                isProcessing: processing,
+                canUndo: canUndo,
+                onDelete: { requestedDecision = .trash },
+                onKeep: { requestedDecision = .keep },
+                onUndo: undoLastAction
+            )
                 .frame(height: actionOverlayHeight)
 
             thumbnailStrip
@@ -253,25 +228,6 @@ struct DuplicateGroupSwipeView: View {
         .accessibilityLabel("同じグループの写真、最大10枚")
     }
 
-    private var actionControls: some View {
-        ZStack {
-            HStack(spacing: 32) {
-                actionButton("削除", color: .swipeeDelete, decision: .trash) {
-                    requestedDecision = .trash
-                }
-                actionButton("キープ", color: .swipeeKeep, decision: .keep) {
-                    requestedDecision = .keep
-                }
-            }
-            HStack {
-                undoButton
-                    .opacity(activeSwipeDecision == nil ? 1 : 0)
-                    .scaleEffect(activeSwipeDecision == nil ? 1 : 0.72)
-                Spacer()
-            }
-        }
-    }
-
     private var readyState: some View {
         ReviewBatchReadyScreen(
             itemCount: currentBatchItems.count,
@@ -304,41 +260,6 @@ struct DuplicateGroupSwipeView: View {
 
     private var batchTargetCount: Int {
         min(batchSize, currentBatchItems.count + remainingAssets.count)
-    }
-
-    private var undoButton: some View {
-        Button { undoLastAction() } label: {
-            Image(systemName: "arrow.uturn.backward")
-                .font(.subheadline.bold())
-                .frame(width: 34, height: 34)
-                .background(.white.opacity(0.12), in: Circle())
-                .overlay { Circle().stroke(.white.opacity(0.2)) }
-                .frame(width: 44, height: 44)
-        }
-        .foregroundStyle(.white.opacity(0.82))
-        .opacity(canUndo ? 1 : 0.28)
-        .disabled(processing || !canUndo)
-        .accessibilityLabel("直前の操作を戻す")
-    }
-
-    private func actionButton(
-        _ title: String,
-        color: Color,
-        decision: SwipeDecision,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline.bold())
-                .frame(width: 86, height: 54)
-                .background(.white.opacity(0.12), in: Capsule())
-                .overlay { Capsule().stroke(.white.opacity(0.2)) }
-                .foregroundStyle(color)
-        }
-        .scaleEffect(activeSwipeDecision == decision ? 1.28 : 1)
-        .opacity(activeSwipeDecision == nil || activeSwipeDecision == decision ? 1 : 0)
-        .disabled(processing)
-        .accessibilityLabel(title)
     }
 
     private func decide(_ decision: SwipeDecision, asset: PHAsset) async -> Bool {
@@ -433,41 +354,13 @@ struct DuplicateGroupSwipeView: View {
         let feedback = UIImpactFeedbackGenerator(style: .light)
         feedback.prepare()
         restoringCard = RestoringCard(asset: asset, decision: decision)
-        restorationProgress = 0
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(16))
-        if reduceMotion {
-            withAnimation(.easeOut(duration: 0.18)) { restorationProgress = 1 }
-            try? await Task.sleep(for: .milliseconds(180))
-        } else {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
-                restorationProgress = 1
-            }
-            try? await Task.sleep(for: .milliseconds(500))
-        }
+        await CardRestorationAnimation.run(
+            progress: $restorationProgress,
+            reduceMotion: reduceMotion
+        )
         feedback.impactOccurred()
         restoringCard = nil
         restorationProgress = 0
-    }
-
-    private func restorationOffset(for decision: SwipeDecision, in size: CGSize) -> CGSize {
-        guard !reduceMotion else { return .zero }
-        let remaining = 1 - restorationProgress
-        switch decision {
-        case .trash: return CGSize(width: -max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
-        case .keep: return CGSize(width: max(size.width * 1.15, 420) * remaining, height: 18 * remaining)
-        case .favorite: return CGSize(width: 0, height: -max(size.height * 1.15, 620) * remaining)
-        }
-    }
-
-    private func restorationRotation(for decision: SwipeDecision) -> Angle {
-        guard !reduceMotion else { return .zero }
-        let remaining = 1 - restorationProgress
-        switch decision {
-        case .trash: return .degrees(-10 * remaining)
-        case .keep: return .degrees(10 * remaining)
-        case .favorite: return .zero
-        }
     }
 
     private func updateImageCache() {
