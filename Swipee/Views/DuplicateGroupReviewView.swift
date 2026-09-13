@@ -18,7 +18,8 @@ struct DuplicateGroupReviewView: View {
     let group: DuplicatePhotoGroup
     let batchAssetIdentifiers: [String]
     let isFinalBatch: Bool
-    let onFinished: () -> Void
+    let onClose: () -> Void
+    let onPrimaryAction: () -> Void
 
     @State private var assets: [PHAsset] = []
     @State private var result: DuplicateGroupResult?
@@ -49,8 +50,8 @@ struct DuplicateGroupReviewView: View {
                     deletedCount: result.deletedCount,
                     totalDeletedCount: result.totalDeletedCount,
                     primaryButtonTitle: isFinalBatch ? "重複候補へ戻る" : "次の写真を見る",
-                    onClose: onFinished,
-                    onPrimaryAction: onFinished
+                    onClose: onClose,
+                    onPrimaryAction: onPrimaryAction
                 )
             } else {
                 reviewScreen

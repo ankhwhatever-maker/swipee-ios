@@ -86,28 +86,17 @@ struct DuplicateGroupSwipeView: View {
         .fullScreenCover(isPresented: $showingReview, onDismiss: {
             guard reviewFinished else { return }
             reviewFinished = false
-            if reviewingFinalBatch {
-                dismiss()
-                Task {
-                    await analysis.analyzeIfNeeded(
-                        library: library,
-                        pendingDeletions: pendingDeletions
-                    )
-                }
-            } else {
-                reviewingAssetIdentifiers = []
-                reviewingFinalBatch = false
-                updateImageCache()
-            }
+            reviewingAssetIdentifiers = []
+            reviewingFinalBatch = false
+            updateImageCache()
         }) {
             DuplicateGroupReviewView(
                 group: group,
                 batchAssetIdentifiers: reviewingAssetIdentifiers,
-                isFinalBatch: reviewingFinalBatch
-            ) {
-                reviewFinished = true
-                showingReview = false
-            }
+                isFinalBatch: reviewingFinalBatch,
+                onClose: finishReviewAndReturnToList,
+                onPrimaryAction: finishReviewFromPrimaryAction
+            )
         }
         .alert("操作を完了できませんでした", isPresented: Binding(
             get: { library.errorMessage != nil },
@@ -348,6 +337,29 @@ struct DuplicateGroupSwipeView: View {
         reviewingAssetIdentifiers = currentBatchItems.map(\.assetIdentifier)
         reviewingFinalBatch = remainingAssets.isEmpty
         showingReview = true
+    }
+
+    private func finishReviewFromPrimaryAction() {
+        if reviewingFinalBatch {
+            finishReviewAndReturnToList()
+        } else {
+            reviewFinished = true
+            showingReview = false
+        }
+    }
+
+    private func finishReviewAndReturnToList() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            dismiss()
+        }
+        Task {
+            await analysis.analyzeIfNeeded(
+                library: library,
+                pendingDeletions: pendingDeletions
+            )
+        }
     }
 
     private func restore(_ asset: PHAsset, from decision: SwipeDecision) async {
