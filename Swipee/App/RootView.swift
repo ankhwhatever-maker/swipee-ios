@@ -53,7 +53,10 @@ struct RootView: View {
                 .toolbarColorScheme(.dark, for: .tabBar)
                 .tabItem {
                     Label("整理", systemImage: "rectangle.stack")
-                        .symbolVariant(selectedTab == .organize ? .fill : .none)
+                        .environment(
+                            \.symbolVariants,
+                            selectedTab == .organize ? .fill : .none
+                        )
                 }
                 .tag(AppTab.organize)
 
@@ -63,7 +66,10 @@ struct RootView: View {
                 .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label("重複", systemImage: "square.on.square")
-                        .symbolVariant(selectedTab == .duplicates ? .fill : .none)
+                        .environment(
+                            \.symbolVariants,
+                            selectedTab == .duplicates ? .fill : .none
+                        )
                 }
                 .tag(AppTab.duplicates)
 
@@ -73,7 +79,10 @@ struct RootView: View {
                 .toolbarColorScheme(.light, for: .tabBar)
                 .tabItem {
                     Label("設定", systemImage: "gearshape")
-                        .symbolVariant(selectedTab == .settings ? .fill : .none)
+                        .environment(
+                            \.symbolVariants,
+                            selectedTab == .settings ? .fill : .none
+                        )
                 }
                 .tag(AppTab.settings)
         }
