@@ -22,6 +22,7 @@ struct DuplicateGroupSwipeView: View {
     @State private var reviewingAssetIdentifiers: [String] = []
     @State private var reviewingFinalBatch = false
     @State private var isReturningToListFromReview = false
+    @State private var shouldAnalyzeAfterReturningToList = false
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
     @State private var cachedAssets: [PHAsset] = []
@@ -90,6 +91,15 @@ struct DuplicateGroupSwipeView: View {
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
                     dismiss()
+                }
+                if shouldAnalyzeAfterReturningToList {
+                    Task {
+                        await Task.yield()
+                        await analysis.analyzeIfNeeded(
+                            library: library,
+                            pendingDeletions: pendingDeletions
+                        )
+                    }
                 }
                 return
             }
@@ -332,24 +342,11 @@ struct DuplicateGroupSwipeView: View {
 
     private func finishReviewFromPrimaryAction() {
         if reviewingFinalBatch {
-            finishReviewAndReturnToList()
+            shouldAnalyzeAfterReturningToList = true
+            returnToListFromReview()
         } else {
             reviewFinished = true
             showingReview = false
-        }
-    }
-
-    private func finishReviewAndReturnToList() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            dismiss()
-        }
-        Task {
-            await analysis.analyzeIfNeeded(
-                library: library,
-                pendingDeletions: pendingDeletions
-            )
         }
     }
 

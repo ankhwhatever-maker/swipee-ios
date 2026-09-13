@@ -26,6 +26,9 @@ struct DuplicatesView: View {
         }
         .navigationTitle("重複候補")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: DuplicatePhotoGroup.self) { group in
+            DuplicateGroupSwipeView(group: group)
+        }
         .task { await authorizeAndLoadCachedResults() }
         .onChange(of: analysis.groups) { _, _ in loadAssets() }
         .alert("解析を完了できませんでした", isPresented: Binding(
@@ -81,9 +84,6 @@ struct DuplicatesView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-        }
-        .navigationDestination(for: DuplicatePhotoGroup.self) { group in
-            DuplicateGroupSwipeView(group: group)
         }
     }
 
