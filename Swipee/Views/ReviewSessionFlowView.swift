@@ -62,6 +62,7 @@ struct ReviewSessionFlowView: View {
             deletionCount: session.deletionCount,
             isDeleting: isDeleting,
             imageManager: library.imageManager,
+            backAccessibilityLabel: "仕分けに戻る",
             decisionForAsset: { asset in
                 session.items.first {
                     $0.assetIdentifier == asset.localIdentifier

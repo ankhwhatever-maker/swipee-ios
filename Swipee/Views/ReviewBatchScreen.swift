@@ -11,6 +11,7 @@ struct ReviewBatchScreen: View {
     let deletionCount: Int
     let isDeleting: Bool
     let imageManager: PHCachingImageManager
+    let backAccessibilityLabel: String
     let decisionForAsset: (PHAsset) -> SwipeDecision
     let onToggleDeletion: (PHAsset, SwipeDecision) -> Void
     let onBack: () -> Void
@@ -63,7 +64,7 @@ struct ReviewBatchScreen: View {
                             .frame(width: 44, height: 44)
                     }
                     .disabled(isDeleting)
-                    .accessibilityLabel("仕分けに戻る")
+                    .accessibilityLabel(backAccessibilityLabel)
                 }
             }
             .safeAreaInset(edge: .bottom) {

@@ -80,6 +80,7 @@ struct DuplicateGroupReviewView: View {
             deletionCount: deletionCount,
             isDeleting: isDeleting,
             imageManager: library.imageManager,
+            backAccessibilityLabel: "重複整理に戻る",
             decisionForAsset: { asset in
                 items.first {
                     $0.assetIdentifier == asset.localIdentifier
