@@ -27,12 +27,17 @@ final class DuplicateAnalysisService: ObservableObject {
     }
 
     private let cacheURL: URL
+    private let defaults: UserDefaults
     private let cacheWriter = CacheWriter()
     private var cacheLoadTask: Task<LoadedState?, Never>?
     private var didLoadCache = false
     private var records: [String: DuplicateAnalysisRecord] = [:]
     private var similarPairs: Set<DuplicateSimilarPair> = []
     private var cacheRevision = 0
+
+    private static let automaticUnavailableRetryKey = "duplicateAnalysis.lastUnavailableRetry"
+    private static let automaticUnavailableRetryInterval: TimeInterval = 24 * 60 * 60
+    private static let checkpointBatchSize = 25
 
     private struct LoadedState: Sendable {
         let records: [String: DuplicateAnalysisRecord]
@@ -58,7 +63,7 @@ final class DuplicateAnalysisService: ObservableObject {
     }
 
     init(defaults: UserDefaults = .standard, cacheURL: URL? = nil) {
-        _ = defaults
+        self.defaults = defaults
         self.cacheURL = cacheURL ?? Self.defaultCacheURL()
         let sourceURL = self.cacheURL
         cacheLoadTask = Task.detached(priority: .utility) {
@@ -70,14 +75,33 @@ final class DuplicateAnalysisService: ObservableObject {
         await ensureCacheLoaded()
     }
 
-    func analyzeIfNeeded(
+    func analyzeAutomaticallyIfNeeded(
         library: PhotoLibraryService,
         pendingDeletions: PendingDeletionStore
     ) async {
-        guard !isAnalyzing else { return }
+        let now = Date().timeIntervalSince1970
+        let lastRetry = defaults.double(forKey: Self.automaticUnavailableRetryKey)
+        let shouldRetryUnavailable = lastRetry == 0 ||
+            now - lastRetry >= Self.automaticUnavailableRetryInterval
+        let completed = await analyzeIfNeeded(
+            library: library,
+            pendingDeletions: pendingDeletions,
+            retryUnavailable: shouldRetryUnavailable
+        )
+        if completed, shouldRetryUnavailable {
+            defaults.set(now, forKey: Self.automaticUnavailableRetryKey)
+        }
+    }
+
+    @discardableResult
+    func analyzeIfNeeded(
+        library: PhotoLibraryService,
+        pendingDeletions: PendingDeletionStore,
+        retryUnavailable: Bool = false
+    ) async -> Bool {
         await ensureCacheLoaded()
         library.refreshAuthorizationStatus()
-        guard library.canReadLibrary else { return }
+        guard library.canReadLibrary, !isAnalyzing, !Task.isCancelled else { return false }
 
         isAnalyzing = true
         analyzedCount = 0
@@ -87,7 +111,7 @@ final class DuplicateAnalysisService: ObservableObject {
 
         let pending = pendingDeletions.assetIdentifiers
         let allAssets = await library.fetchAllImageAssets()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
         let metadata = allAssets.map {
             DuplicateAssetMetadata(
                 identifier: $0.localIdentifier,
@@ -101,23 +125,24 @@ final class DuplicateAnalysisService: ObservableObject {
         let metadataCandidateIdentifiers = await Task.detached(priority: .utility) {
             DuplicateCandidateFilter.candidateIdentifiers(from: metadata, excluding: pending)
         }.value
-        let assets = allAssets.filter {
-            metadataCandidateIdentifiers.contains($0.localIdentifier) &&
-                records[$0.localIdentifier]?.matches($0) != true
+        let assets = allAssets.filter { asset in
+            guard metadataCandidateIdentifiers.contains(asset.localIdentifier) else { return false }
+            guard let record = records[asset.localIdentifier] else { return true }
+            return !record.matches(asset) || (retryUnavailable && !record.isAvailable)
         }
         totalCount = assets.count
 
-        let groupIdentifiers = Set(groups.flatMap(\.assetIdentifiers))
-        let availableIdentifiers = Set(allAssets.map(\.localIdentifier))
-        let availableGroupIdentifiers = groupIdentifiers.intersection(availableIdentifiers)
-        let deleted = groupIdentifiers.subtracting(availableGroupIdentifiers)
+        // Records outside the current metadata candidate set are stale: the asset was
+        // deleted, excluded, modified out of candidacy, or is no longer near a peer.
+        let staleIdentifiers = Set(records.keys).subtracting(metadataCandidateIdentifiers)
 
         await process(
             assets: assets,
-            deleting: deleted,
+            deleting: staleIdentifiers,
             manager: library.imageManager
         )
         updateCounts()
+        return !Task.isCancelled
     }
 
     func removeGroup(_ groupIdentifier: String) {
@@ -137,35 +162,54 @@ final class DuplicateAnalysisService: ObservableObject {
     ) async {
         guard !assets.isEmpty || !deletedIdentifiers.isEmpty else { return }
 
-        var affectedIdentifiers = deletedIdentifiers
-        for identifier in deletedIdentifiers { records.removeValue(forKey: identifier) }
-
-        for asset in assets {
-            if Task.isCancelled { return }
-            let identifier = asset.localIdentifier
-            affectedIdentifiers.insert(identifier)
-            let image = await requestSmallImage(for: asset, manager: manager)
-            let signature: Signature?
-            if let image {
-                signature = await Self.signature(for: image)
-            } else {
-                signature = nil
-            }
-            records[identifier] = DuplicateAnalysisRecord(
-                identifier: identifier,
-                pixelWidth: asset.pixelWidth,
-                pixelHeight: asset.pixelHeight,
-                creationTimestamp: asset.creationDate?.timeIntervalSince1970,
-                modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
-                burstIdentifier: asset.burstIdentifier,
-                differenceHash: signature?.differenceHash,
-                averageRed: signature?.averageRed,
-                averageGreen: signature?.averageGreen,
-                averageBlue: signature?.averageBlue
-            )
-            analyzedCount += 1
+        if !deletedIdentifiers.isEmpty {
+            for identifier in deletedIdentifiers { records.removeValue(forKey: identifier) }
+            await rebuildSimilarityResults(affectedIdentifiers: deletedIdentifiers)
+            await persistAndWait()
+            guard !Task.isCancelled else { return }
         }
 
+        var batchStart = 0
+        while batchStart < assets.count {
+            let batchEnd = min(batchStart + Self.checkpointBatchSize, assets.count)
+            var affectedIdentifiers: Set<String> = []
+
+            for asset in assets[batchStart..<batchEnd] {
+                guard !Task.isCancelled else { break }
+                let identifier = asset.localIdentifier
+                affectedIdentifiers.insert(identifier)
+                let image = await requestSmallImage(for: asset, manager: manager)
+                let signature: Signature?
+                if let image {
+                    signature = await Self.signature(for: image)
+                } else {
+                    signature = nil
+                }
+                records[identifier] = DuplicateAnalysisRecord(
+                    identifier: identifier,
+                    pixelWidth: asset.pixelWidth,
+                    pixelHeight: asset.pixelHeight,
+                    creationTimestamp: asset.creationDate?.timeIntervalSince1970,
+                    modificationTimestamp: asset.modificationDate?.timeIntervalSince1970,
+                    burstIdentifier: asset.burstIdentifier,
+                    differenceHash: signature?.differenceHash,
+                    averageRed: signature?.averageRed,
+                    averageGreen: signature?.averageGreen,
+                    averageBlue: signature?.averageBlue
+                )
+                analyzedCount += 1
+            }
+
+            if !affectedIdentifiers.isEmpty {
+                await rebuildSimilarityResults(affectedIdentifiers: affectedIdentifiers)
+                await persistAndWait()
+            }
+            guard !Task.isCancelled else { return }
+            batchStart = batchEnd
+        }
+    }
+
+    private func rebuildSimilarityResults(affectedIdentifiers: Set<String>) async {
         similarPairs = similarPairs.filter { !$0.contains(any: affectedIdentifiers) }
         var newPairs = await DuplicateSimilarityEngine.findSimilarPairs(
             records: Array(records.values),
@@ -186,6 +230,7 @@ final class DuplicateAnalysisService: ObservableObject {
             let missingIdentifiers = candidateIdentifiers.subtracting(availableCandidateIdentifiers)
             for identifier in missingIdentifiers { records.removeValue(forKey: identifier) }
             newPairs = newPairs.filter { !$0.contains(any: missingIdentifiers) }
+            similarPairs = similarPairs.filter { !$0.contains(any: missingIdentifiers) }
         }
         similarPairs.formUnion(newPairs)
         groups = await DuplicateSimilarityEngine.makeGroups(
@@ -193,7 +238,6 @@ final class DuplicateAnalysisService: ObservableObject {
             validIdentifiers: Set(records.keys)
         )
         updateCounts()
-        persist()
     }
 
     private func requestSmallImage(
@@ -218,22 +262,37 @@ final class DuplicateAnalysisService: ObservableObject {
     }
 
     private func persist() {
-        cacheRevision &+= 1
-        let revision = cacheRevision
-        let cache = Cache(
-            version: 2,
-            records: Array(records.values),
-            pairs: Array(similarPairs),
-            groups: groups
-        )
-        let url = cacheURL
+        let snapshot = cacheSnapshot()
         Task {
             do {
-                try await cacheWriter.write(cache, revision: revision, to: url)
+                try await cacheWriter.write(snapshot.cache, revision: snapshot.revision, to: snapshot.url)
             } catch {
                 errorMessage = "解析結果を保存できませんでした。次回、もう一度写真を確認します。"
             }
         }
+    }
+
+    private func persistAndWait() async {
+        let snapshot = cacheSnapshot()
+        do {
+            try await cacheWriter.write(snapshot.cache, revision: snapshot.revision, to: snapshot.url)
+        } catch {
+            errorMessage = "解析結果を保存できませんでした。次回、もう一度写真を確認します。"
+        }
+    }
+
+    private func cacheSnapshot() -> (cache: Cache, revision: Int, url: URL) {
+        cacheRevision &+= 1
+        return (
+            Cache(
+                version: 2,
+                records: Array(records.values),
+                pairs: Array(similarPairs),
+                groups: groups
+            ),
+            cacheRevision,
+            cacheURL
+        )
     }
 
     private func ensureCacheLoaded() async {

@@ -2,6 +2,11 @@ import SwiftUI
 import UIKit
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var duplicateAnalysis: DuplicateAnalysisService
+    @EnvironmentObject private var pendingDeletions: PendingDeletionStore
+    @EnvironmentObject private var photoLibrary: PhotoLibraryService
+
     @State private var selectedTab: AppTab = .organize
 
     private enum AppTab: Hashable {
@@ -72,6 +77,29 @@ struct RootView: View {
                 }
                 .tag(AppTab.settings)
         }
+        .task(id: automaticDuplicateAnalysisTrigger) {
+            guard scenePhase == .active else { return }
+            photoLibrary.refreshAuthorizationStatus()
+            guard photoLibrary.canReadLibrary else { return }
+
+            // A previous foreground task may still be winding down after cancellation.
+            while duplicateAnalysis.isAnalyzing {
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return
+                }
+            }
+            guard !Task.isCancelled else { return }
+            await duplicateAnalysis.analyzeAutomaticallyIfNeeded(
+                library: photoLibrary,
+                pendingDeletions: pendingDeletions
+            )
+        }
+    }
+
+    private var automaticDuplicateAnalysisTrigger: String {
+        "\(scenePhase)-\(photoLibrary.authorizationStatus.rawValue)"
     }
 
     private static func selectionIndicatorImage() -> UIImage {

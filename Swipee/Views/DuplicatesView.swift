@@ -158,7 +158,8 @@ struct DuplicatesView: View {
     private func analyze() async {
         await analysis.analyzeIfNeeded(
             library: library,
-            pendingDeletions: pendingDeletions
+            pendingDeletions: pendingDeletions,
+            retryUnavailable: true
         )
         loadAssets()
     }
