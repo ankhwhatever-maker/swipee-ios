@@ -19,12 +19,6 @@ struct RootView: View {
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = .systemBackground
-        appearance.selectionIndicatorImage = Self.selectionIndicatorImage()
-        appearance.selectionIndicatorTintColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor.white.withAlphaComponent(0.16)
-                : UIColor.black.withAlphaComponent(0.08)
-        }
 
         let itemAppearances = [
             appearance.stackedLayoutAppearance,
@@ -109,16 +103,6 @@ struct RootView: View {
 
     private var automaticDuplicateAnalysisTrigger: String {
         "\(scenePhase)-\(photoLibrary.authorizationStatus.rawValue)"
-    }
-
-    private static func selectionIndicatorImage() -> UIImage {
-        let size = CGSize(width: 92, height: 46)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { _ in
-            UIColor.white.setFill()
-            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2).fill()
-        }
-        .withRenderingMode(.alwaysTemplate)
     }
 }
 
