@@ -72,7 +72,7 @@ struct DuplicateGroupReviewView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .interactiveDismissDisabled(isDeleting)
+        .interactiveDismissDisabled()
     }
 
     private var reviewScreen: some View {
