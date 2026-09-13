@@ -66,6 +66,23 @@ final class DuplicateSessionStoreTests: XCTestCase {
         XCTAssertNil(store.items(for: "group").first?.decisionBeforeDeletion)
     }
 
+    func testInitiallyDeletedItemRestoresAsKeepInReview() {
+        let store = DuplicateSessionStore(defaults: defaults)
+        store.append(groupIdentifier: "group", assetIdentifier: "asset-1", decision: .trash)
+
+        guard let item = store.items(for: "group").first else {
+            return XCTFail("Expected a review item")
+        }
+        store.updateDecision(
+            groupIdentifier: "group",
+            assetIdentifier: item.assetIdentifier,
+            decision: item.decisionRestoredAfterRemovingDeletion
+        )
+
+        XCTAssertEqual(store.items(for: "group").first?.decision, .keep)
+        XCTAssertNil(store.items(for: "group").first?.decisionBeforeDeletion)
+    }
+
     func testClearingOneGroupDoesNotClearAnother() {
         let store = DuplicateSessionStore(defaults: defaults)
         store.append(groupIdentifier: "group-a", assetIdentifier: "asset-1", decision: .keep)

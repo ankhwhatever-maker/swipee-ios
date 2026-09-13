@@ -82,7 +82,7 @@ struct ReviewSessionFlowView: View {
         guard let item = session.items.first(where: { $0.assetIdentifier == asset.localIdentifier }) else { return }
 
         if currentDecision == .trash {
-            let restoredDecision = item.decisionBeforeDeletion ?? .keep
+            let restoredDecision = item.decisionRestoredAfterRemovingDeletion
             pendingDeletions.remove(assetIdentifier: asset.localIdentifier)
             history.record(
                 assetIdentifier: asset.localIdentifier,

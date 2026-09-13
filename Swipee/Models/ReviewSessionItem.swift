@@ -10,4 +10,8 @@ struct ReviewSessionItem: Codable, Equatable, Identifiable {
     let reviewedAt: Date
 
     var id: String { assetIdentifier }
+
+    var decisionRestoredAfterRemovingDeletion: SwipeDecision {
+        decisionBeforeDeletion ?? .keep
+    }
 }

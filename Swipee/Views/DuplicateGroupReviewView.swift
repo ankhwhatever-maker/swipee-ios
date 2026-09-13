@@ -100,7 +100,7 @@ struct DuplicateGroupReviewView: View {
             duplicateSessions.updateDecision(
                 groupIdentifier: group.id,
                 assetIdentifier: asset.localIdentifier,
-                decision: item.decisionBeforeDeletion ?? item.originalDecision ?? .keep
+                decision: item.decisionRestoredAfterRemovingDeletion
             )
         } else {
             pendingDeletions.enqueue(
