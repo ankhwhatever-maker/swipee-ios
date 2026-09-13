@@ -4,9 +4,10 @@ struct PhotoFilterView: View {
     @EnvironmentObject private var settings: CandidateSettingsStore
     @EnvironmentObject private var history: ReviewHistoryStore
     @EnvironmentObject private var session: ReviewSessionStore
+    @EnvironmentObject private var duplicateReviewed: DuplicateReviewedStore
     @Environment(\.dismiss) private var dismiss
     @State private var draft: CandidateSettings?
-    @State private var showingKeptResetConfirmation = false
+    @State private var showingReviewedResetConfirmation = false
 
     private var selection: CandidateSettings {
         draft ?? settings.value
@@ -55,15 +56,14 @@ struct PhotoFilterView: View {
                 favoriteRow
             }
             Section {
-                LabeledContent("キープ済み", value: "\(resettableKeptCount)枚")
-                Button("キープ済み写真をもう一度表示") {
-                    showingKeptResetConfirmation = true
+                Button("確認済みを元に戻す") {
+                    showingReviewedResetConfirmation = true
                 }
-                .disabled(resettableKeptCount == 0)
+                .disabled(!hasResettableReviewedItems)
             } header: {
                 Text("確認済みの写真")
             } footer: {
-                Text("一度キープした写真は、条件を変えても表示されません。再表示しても、削除予定・削除済みの写真には影響しません。")
+                Text("整理でキープした写真と、確認済みにした重複候補をもう一度表示します。削除予定・削除済みの写真には影響しません。")
             }
         }
         .navigationTitle("表示する写真")
@@ -82,16 +82,17 @@ struct PhotoFilterView: View {
             if draft == nil { draft = settings.value }
         }
         .confirmationDialog(
-            "キープ済み写真をもう一度表示しますか？",
-            isPresented: $showingKeptResetConfirmation,
+            "確認済みの写真を元に戻しますか？",
+            isPresented: $showingReviewedResetConfirmation,
             titleVisibility: .visible
         ) {
-            Button("再表示", role: .destructive) {
+            Button("元に戻す", role: .destructive) {
                 history.clearKept(excluding: currentSessionKeptIdentifiers)
+                duplicateReviewed.clear()
             }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("これまでキープした写真が整理対象に戻ります。今回整理中の写真と、削除予定・削除済みの写真には影響しません。")
+            Text("整理でキープした写真と、確認済みにした重複候補が再表示されます。今回整理中の写真と、削除予定・削除済みの写真には影響しません。")
         }
     }
 
@@ -103,6 +104,10 @@ struct PhotoFilterView: View {
 
     private var resettableKeptCount: Int {
         history.keptAssetIdentifiers.subtracting(currentSessionKeptIdentifiers).count
+    }
+
+    private var hasResettableReviewedItems: Bool {
+        resettableKeptCount > 0 || !duplicateReviewed.groupIdentifiers.isEmpty
     }
 
     private func mediaRow(_ kind: CandidateMediaKind) -> some View {
