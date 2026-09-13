@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class ReviewHistoryStore: ObservableObject {
     @Published private(set) var records: [ReviewRecord]
+    @Published private(set) var keptHistoryRevision = 0
     private let defaults: UserDefaults
     private let key = "reviewHistory.v1"
     private var reviewedKeys: Set<ReviewKey>
@@ -30,9 +31,9 @@ final class ReviewHistoryStore: ObservableObject {
         reviewedKeys.contains(ReviewKey(assetIdentifier: assetIdentifier, conditionKey: conditionKey))
     }
 
-    func assetIdentifiers(for conditionKey: String) -> Set<String> {
-        Set(reviewedKeys.lazy
-            .filter { $0.conditionKey == conditionKey }
+    var keptAssetIdentifiers: Set<String> {
+        Set(records.lazy
+            .filter { $0.decision == .keep }
             .map(\.assetIdentifier))
     }
 
@@ -54,6 +55,19 @@ final class ReviewHistoryStore: ObservableObject {
         reviewedKeys.remove(ReviewKey(assetIdentifier: assetIdentifier, conditionKey: conditionKey))
         persist()
         return record
+    }
+
+    func clearKept(excluding excludedIdentifiers: Set<String> = []) {
+        let previousCount = records.count
+        records.removeAll {
+            $0.decision == .keep && !excludedIdentifiers.contains($0.assetIdentifier)
+        }
+        guard records.count != previousCount else { return }
+        reviewedKeys = Set(records.map {
+            ReviewKey(assetIdentifier: $0.assetIdentifier, conditionKey: $0.conditionKey)
+        })
+        keptHistoryRevision &+= 1
+        persist()
     }
 
     private func persist() {

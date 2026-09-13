@@ -2,8 +2,11 @@ import SwiftUI
 
 struct PhotoFilterView: View {
     @EnvironmentObject private var settings: CandidateSettingsStore
+    @EnvironmentObject private var history: ReviewHistoryStore
+    @EnvironmentObject private var session: ReviewSessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var draft: CandidateSettings?
+    @State private var showingKeptResetConfirmation = false
 
     private var selection: CandidateSettings {
         draft ?? settings.value
@@ -51,6 +54,17 @@ struct PhotoFilterView: View {
             Section("お気に入り") {
                 favoriteRow
             }
+            Section {
+                LabeledContent("キープ済み", value: "\(resettableKeptCount)枚")
+                Button("キープ済み写真をもう一度表示") {
+                    showingKeptResetConfirmation = true
+                }
+                .disabled(resettableKeptCount == 0)
+            } header: {
+                Text("確認済みの写真")
+            } footer: {
+                Text("一度キープした写真は、条件を変えても表示されません。再表示しても、削除予定・削除済みの写真には影響しません。")
+            }
         }
         .navigationTitle("表示する写真")
         .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +81,28 @@ struct PhotoFilterView: View {
         .onAppear {
             if draft == nil { draft = settings.value }
         }
+        .confirmationDialog(
+            "キープ済み写真をもう一度表示しますか？",
+            isPresented: $showingKeptResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("再表示", role: .destructive) {
+                history.clearKept(excluding: currentSessionKeptIdentifiers)
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("これまでキープした写真が整理対象に戻ります。今回整理中の写真と、削除予定・削除済みの写真には影響しません。")
+        }
+    }
+
+    private var currentSessionKeptIdentifiers: Set<String> {
+        Set(session.items.lazy
+            .filter { $0.decision == .keep }
+            .map(\.assetIdentifier))
+    }
+
+    private var resettableKeptCount: Int {
+        history.keptAssetIdentifiers.subtracting(currentSessionKeptIdentifiers).count
     }
 
     private func mediaRow(_ kind: CandidateMediaKind) -> some View {

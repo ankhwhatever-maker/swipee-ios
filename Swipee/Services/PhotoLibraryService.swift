@@ -51,7 +51,7 @@ final class PhotoLibraryService: ObservableObject {
         }
 
         let pendingIdentifiers = pendingDeletions.assetIdentifiers
-        let reviewedIdentifiers = history.assetIdentifiers(for: settings.conditionKey)
+        let reviewedIdentifiers = history.keptAssetIdentifiers
         let next = await Task.detached(priority: .userInitiated) {
             let options = PHFetchOptions()
             options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
