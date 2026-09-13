@@ -269,9 +269,11 @@ struct DuplicateGroupSwipeView: View {
     }
 
     private var readyState: some View {
-        ReviewBatchReadyScreen(itemCount: currentBatchItems.count) {
-            prepareReview()
-        }
+        ReviewBatchReadyScreen(
+            itemCount: currentBatchItems.count,
+            onBack: { dismiss() },
+            onReview: prepareReview
+        )
     }
 
     private var progressPill: some View {
