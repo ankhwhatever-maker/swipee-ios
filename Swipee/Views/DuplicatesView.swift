@@ -26,30 +26,8 @@ struct DuplicatesView: View {
         }
         .navigationTitle("重複候補")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        Task { await analyze(manual: true) }
-                    } label: {
-                        Label(
-                            isManualAnalysisRunning ? "確認中…" : "写真を確認",
-                            systemImage: "arrow.clockwise"
-                        )
-                    }
-                    .disabled(isManualAnalysisRunning)
-                    Button("確認済みを再表示", systemImage: "eye") {
-                        reviewed.clear()
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal")
-                }
-                .accessibilityLabel("重複候補メニュー")
-            }
-        }
         .task { await authorizeAndLoadCachedResults() }
         .onChange(of: analysis.groups) { _, _ in loadAssets() }
-        .refreshable { await analyze() }
         .alert("解析を完了できませんでした", isPresented: Binding(
             get: { analysis.errorMessage != nil },
             set: { if !$0 { analysis.errorMessage = nil } }
@@ -68,12 +46,14 @@ struct DuplicatesView: View {
         case .denied, .restricted:
             PhotoAccessRequiredView()
         default:
-            if visibleGroups.isEmpty, analysis.isAnalyzing {
-                analysisProgress
-            } else if visibleGroups.isEmpty {
-                emptyState
-            } else {
+            if !visibleGroups.isEmpty {
                 groupGrid
+            } else if !analysis.groups.isEmpty {
+                allReviewedState
+            } else if analysis.isAnalyzing {
+                analysisProgress
+            } else {
+                emptyState
             }
         }
     }
@@ -150,6 +130,19 @@ struct DuplicatesView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(isManualAnalysisRunning)
+        }
+    }
+
+    private var allReviewedState: some View {
+        ContentUnavailableView {
+            Label("すべての重複候補を確認しました", systemImage: "checkmark.circle")
+        } description: {
+            Text("新しい写真は自動で確認されます。")
+        } actions: {
+            Button("確認済みの候補をもう一度見る") {
+                reviewed.clear()
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 
