@@ -539,7 +539,7 @@ struct SwipeCardView: View {
             return SwipeRevealPresentation(
                 decision: .keep,
                 title: "キープ",
-                icon: "hand.thumbsup.fill",
+                icon: "checkmark",
                 foregroundColor: Color(red: 0.43, green: 0.94, blue: 0.66)
             )
         default:

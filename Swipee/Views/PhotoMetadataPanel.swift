@@ -41,7 +41,7 @@ struct PhotoMetadataPanel: View {
                     metadataTile(
                         title: "場所",
                         value: placeName,
-                        icon: "mappin.circle.fill"
+                        icon: "mappin"
                     )
                 }
             }
