@@ -8,6 +8,7 @@ struct PhotoActionsSheet: View {
     let onToggleFavorite: () -> Void
     let onShare: () -> Void
     let onAlbumAdded: (String) -> Void
+    let onBackgroundRemoved: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -26,6 +27,26 @@ struct PhotoActionsSheet: View {
                     }
                     .buttonStyle(.plain)
 
+                    if asset.mediaType == .image {
+                        NavigationLink {
+                            BackgroundRemovalView(asset: asset, onSaved: onBackgroundRemoved)
+                        } label: {
+                            actionTile(title: "背景を削除", icon: "person.crop.rectangle")
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        restrictedTile(
+                            title: "背景を削除",
+                            icon: "person.crop.rectangle",
+                            restriction: "写真のみ"
+                        )
+                    }
+
+#if DEBUG
+                    unavailableTile(title: "自動補正", icon: "wand.and.sparkles")
+                    unavailableTile(title: "圧縮する", icon: "arrow.down.right.and.arrow.up.left")
+#endif
+
                     Button(action: onToggleFavorite) {
                         actionTile(
                             title: isFavorite ? "お気に入りから外す" : "お気に入りに追加",
@@ -39,12 +60,6 @@ struct PhotoActionsSheet: View {
                         actionTile(title: "共有", icon: "square.and.arrow.up")
                     }
                     .buttonStyle(.plain)
-
-#if DEBUG
-                    unavailableTile(title: "背景を削除", icon: "person.crop.rectangle")
-                    unavailableTile(title: "自動補正", icon: "wand.and.sparkles")
-                    unavailableTile(title: "圧縮する", icon: "arrow.down.right.and.arrow.up.left")
-#endif
                 }
                 .padding(20)
             }
@@ -76,11 +91,15 @@ struct PhotoActionsSheet: View {
     }
 
     private func unavailableTile(title: String, icon: String) -> some View {
+        restrictedTile(title: title, icon: icon, restriction: "準備中")
+    }
+
+    private func restrictedTile(title: String, icon: String, restriction: String) -> some View {
         ZStack(alignment: .topTrailing) {
             actionTile(title: title, icon: icon)
                 .opacity(0.48)
 
-            Text("準備中")
+            Text(restriction)
                 .font(.caption2.bold())
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
@@ -89,7 +108,7 @@ struct PhotoActionsSheet: View {
                 .padding(8)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title)、準備中")
+        .accessibilityLabel("\(title)、\(restriction)")
     }
 }
 

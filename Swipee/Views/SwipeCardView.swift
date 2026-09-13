@@ -65,6 +65,10 @@ struct SwipeCardView: View {
                     onAlbumAdded: { albumName in
                         showingPhotoActions = false
                         showActionConfirmation("「\(albumName)」に追加しました")
+                    },
+                    onBackgroundRemoved: {
+                        showingPhotoActions = false
+                        showActionConfirmation("背景を削除した写真を保存しました")
                     }
                 )
             }
