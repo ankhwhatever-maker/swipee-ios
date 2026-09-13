@@ -14,6 +14,7 @@ struct DuplicateGroupSwipeView: View {
     let group: DuplicatePhotoGroup
 
     @State private var assets: [PHAsset] = []
+    @State private var hasLoadedAssets = false
     @State private var processing = false
     @State private var requestedDecision: SwipeDecision?
     @State private var activeSwipeDecision: SwipeDecision?
@@ -85,7 +86,7 @@ struct DuplicateGroupSwipeView: View {
     var body: some View {
         ZStack {
             Group {
-                if shouldReviewCurrentBatch {
+                if shouldReviewCurrentBatch || (hasLoadedAssets && assets.isEmpty) {
                     Color.swipeeBackground
                 } else {
                     deckBackground
@@ -94,8 +95,10 @@ struct DuplicateGroupSwipeView: View {
             }
             .ignoresSafeArea()
             Group {
-                if assets.isEmpty {
+                if !hasLoadedAssets {
                     ProgressView().tint(.white)
+                } else if assets.isEmpty {
+                    unavailableState
                 } else if shouldReviewCurrentBatch {
                     readyState
                 } else {
@@ -109,6 +112,7 @@ struct DuplicateGroupSwipeView: View {
         .toolbar(.hidden, for: .tabBar)
         .task {
             assets = library.fetchAssets(localIdentifiers: group.assetIdentifiers)
+            hasLoadedAssets = true
             updateImageCache()
             if shouldReviewCurrentBatch { prepareReview() }
         }
@@ -274,6 +278,17 @@ struct DuplicateGroupSwipeView: View {
             onBack: { dismiss() },
             onReview: prepareReview
         )
+    }
+
+    private var unavailableState: some View {
+        ContentUnavailableView {
+            Label("このグループの写真を表示できません", systemImage: "photo.badge.exclamationmark")
+        } description: {
+            Text("写真が削除されたか、現在の写真アクセス範囲から外れている可能性があります。")
+        } actions: {
+            Button("重複候補へ戻る") { dismiss() }
+                .buttonStyle(.borderedProminent)
+        }
     }
 
     private var progressPill: some View {
