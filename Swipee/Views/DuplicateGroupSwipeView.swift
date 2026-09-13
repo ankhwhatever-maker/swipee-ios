@@ -21,6 +21,7 @@ struct DuplicateGroupSwipeView: View {
     @State private var reviewFinished = false
     @State private var reviewingAssetIdentifiers: [String] = []
     @State private var reviewingFinalBatch = false
+    @State private var isReturningToListFromReview = false
     @State private var restoringCard: RestoringCard?
     @State private var restorationProgress: CGFloat = 0
     @State private var cachedAssets: [PHAsset] = []
@@ -65,8 +66,8 @@ struct DuplicateGroupSwipeView: View {
                     ProgressView().tint(.white)
                 } else if assets.isEmpty {
                     unavailableState
-                } else if shouldReviewCurrentBatch {
-                    readyState
+                } else if isReturningToListFromReview {
+                    Color.clear
                 } else {
                     deck
                 }
@@ -84,6 +85,14 @@ struct DuplicateGroupSwipeView: View {
         }
         .onDisappear { stopImageCache() }
         .fullScreenCover(isPresented: $showingReview, onDismiss: {
+            if isReturningToListFromReview {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    dismiss()
+                }
+                return
+            }
             guard reviewFinished else { return }
             reviewFinished = false
             reviewingAssetIdentifiers = []
@@ -94,6 +103,7 @@ struct DuplicateGroupSwipeView: View {
                 group: group,
                 batchAssetIdentifiers: reviewingAssetIdentifiers,
                 isFinalBatch: reviewingFinalBatch,
+                onBack: returnToListFromReview,
                 onPrimaryAction: finishReviewFromPrimaryAction
             )
         }
@@ -120,7 +130,7 @@ struct DuplicateGroupSwipeView: View {
                         SwipeCardView(
                             asset: asset,
                             manager: library.imageManager,
-                            isInteractive: !processing && restoration == nil,
+                            isInteractive: !processing && !shouldReviewCurrentBatch && restoration == nil,
                             allowsNetworkAccess: true,
                             maximumSize: proxy.size,
                             metadataBottomInset: 0,
@@ -145,7 +155,7 @@ struct DuplicateGroupSwipeView: View {
 
             SwipeActionControls(
                 activeDecision: activeSwipeDecision,
-                isProcessing: processing,
+                isProcessing: processing || shouldReviewCurrentBatch,
                 canUndo: canUndo,
                 onDelete: { requestedDecision = .trash },
                 onKeep: { requestedDecision = .keep },
@@ -214,14 +224,6 @@ struct DuplicateGroupSwipeView: View {
                 .frame(height: 1)
         }
         .accessibilityLabel("同じグループの写真、最大10枚")
-    }
-
-    private var readyState: some View {
-        ReviewBatchReadyScreen(
-            itemCount: currentBatchItems.count,
-            onBack: { dismiss() },
-            onReview: prepareReview
-        )
     }
 
     private var unavailableState: some View {
@@ -319,6 +321,12 @@ struct DuplicateGroupSwipeView: View {
         reviewingAssetIdentifiers = currentBatchItems.map(\.assetIdentifier)
         reviewingFinalBatch = remainingAssets.isEmpty
         showingReview = true
+    }
+
+    private func returnToListFromReview() {
+        guard showingReview else { return }
+        isReturningToListFromReview = true
+        showingReview = false
     }
 
     private func finishReviewFromPrimaryAction() {

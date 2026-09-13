@@ -13,11 +13,11 @@ struct DuplicateGroupReviewView: View {
     @EnvironmentObject private var pendingDeletions: PendingDeletionStore
     @EnvironmentObject private var reviewSession: ReviewSessionStore
     @EnvironmentObject private var library: PhotoLibraryService
-    @Environment(\.dismiss) private var dismiss
 
     let group: DuplicatePhotoGroup
     let batchAssetIdentifiers: [String]
     let isFinalBatch: Bool
+    let onBack: () -> Void
     let onPrimaryAction: () -> Void
 
     @State private var assets: [PHAsset] = []
@@ -86,7 +86,7 @@ struct DuplicateGroupReviewView: View {
             onToggleDeletion: { asset, decision in
                 toggleDeletion(for: asset, currentDecision: decision)
             },
-            onBack: { dismiss() },
+            onBack: onBack,
             onFinish: finishGroup
         )
     }
