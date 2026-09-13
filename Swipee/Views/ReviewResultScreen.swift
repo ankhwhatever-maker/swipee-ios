@@ -1,9 +1,13 @@
 import SwiftUI
 
-struct SessionResultView: View {
-    let result: ReviewSessionResult
+struct ReviewResultScreen: View {
+    let title: String
+    let keptCount: Int
+    let deletedCount: Int
+    let totalDeletedCount: Int
+    let primaryButtonTitle: String
     let onClose: () -> Void
-    let onContinue: () -> Void
+    let onPrimaryAction: () -> Void
 
     var body: some View {
         ZStack {
@@ -11,37 +15,47 @@ struct SessionResultView: View {
             VStack(spacing: 0) {
                 HStack {
                     Button(action: onClose) {
-                        Image(systemName: "xmark").font(.title.bold()).frame(width: 52, height: 52)
+                        Image(systemName: "xmark")
+                            .font(.title.bold())
+                            .frame(width: 52, height: 52)
                     }
                     .foregroundStyle(.white)
                     .accessibilityLabel("閉じる")
                     Spacer()
                 }
                 Spacer(minLength: 36)
-                Text("今回の整理").font(.title2.bold())
+                Text(title).font(.title2.bold())
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(result.deletedCount)")
+                    Text("\(deletedCount)")
                         .font(.system(size: 104, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.65)
                     Text("枚").font(.system(size: 44, weight: .bold, design: .rounded))
                 }
                 .padding(.top, 12)
-                Text(result.deletedCount == 0 ? "削除はありません" : "削除しました").font(.title2.bold())
+                Text(deletedCount == 0 ? "削除はありません" : "削除しました")
+                    .font(.title2.bold())
                 HStack(spacing: 14) {
-                    resultCard(count: result.keptCount, title: "キープ", icon: "checkmark", color: .swipeeKeep)
-                    resultCard(count: result.deletedCount, title: "削除", icon: "trash", color: .swipeeDelete)
+                    resultCard(count: keptCount, title: "キープ", icon: "checkmark", color: .swipeeKeep)
+                    resultCard(count: deletedCount, title: "削除", icon: "trash", color: .swipeeDelete)
                 }
                 .padding(.top, 48)
-                Text("累計 \(result.totalDeletedCount)枚を削除").font(.title3.bold()).padding(.top, 34)
-                Text("削除した写真は、写真アプリの「最近削除した項目」から復元できます。")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.62))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 10)
+                Text("累計 \(totalDeletedCount)枚を削除")
+                    .font(.title3.bold())
+                    .padding(.top, 34)
+                if deletedCount > 0 {
+                    Text("削除した写真は、写真アプリの「最近削除した項目」から復元できます。")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 10)
+                }
                 Spacer(minLength: 36)
-                Button(action: onContinue) {
-                    Text("もう\(ReviewSessionStore.targetCount)枚見る").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 18)
+                Button(action: onPrimaryAction) {
+                    Text(primaryButtonTitle)
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
                         .background(.white.opacity(0.14), in: Capsule())
                 }
                 .foregroundStyle(.white)

@@ -43,10 +43,14 @@ struct DuplicateGroupReviewView: View {
     var body: some View {
         Group {
             if let result {
-                DuplicateResultView(
-                    result: result,
-                    continuesCurrentGroup: !isFinalBatch,
-                    onFinished: onFinished
+                ReviewResultScreen(
+                    title: "重複",
+                    keptCount: result.keptCount,
+                    deletedCount: result.deletedCount,
+                    totalDeletedCount: result.totalDeletedCount,
+                    primaryButtonTitle: isFinalBatch ? "重複候補へ戻る" : "次の写真を見る",
+                    onClose: onFinished,
+                    onPrimaryAction: onFinished
                 )
             } else {
                 reviewScreen

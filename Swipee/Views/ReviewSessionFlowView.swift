@@ -25,10 +25,14 @@ struct ReviewSessionFlowView: View {
     var body: some View {
         Group {
             if let result {
-                SessionResultView(
-                    result: result,
+                ReviewResultScreen(
+                    title: "今回の整理",
+                    keptCount: result.keptCount,
+                    deletedCount: result.deletedCount,
+                    totalDeletedCount: result.totalDeletedCount,
+                    primaryButtonTitle: "もう\(ReviewSessionStore.targetCount)枚見る",
                     onClose: close,
-                    onContinue: closeAndContinue
+                    onPrimaryAction: closeAndContinue
                 )
             } else {
                 reviewScreen
