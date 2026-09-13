@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#FFFFFF"/>
+  <g transform="rotate(-8 512 512)">
+    <path
+      d="M398.857 152H625.143A246.857 246.857 0 0 1 872 398.857V625.143A246.857 246.857 0 0 1 625.143 872H234.286A82.286 82.286 0 0 1 152 789.714V398.857A246.857 246.857 0 0 1 398.857 152Z"
+      fill="#FF766A"
+    />
+    <text
+      x="512"
+      y="530"
+      fill="#FFFFFF"
+      font-family="'Avenir Next', sans-serif"
+      font-size="493.714"
+      font-style="normal"
+      font-weight="800"
+      letter-spacing="-20.571"
+      text-anchor="middle"
+      dominant-baseline="central"
+    >S</text>
+  </g>
+</svg>
