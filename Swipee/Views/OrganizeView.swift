@@ -200,16 +200,22 @@ struct OrganizeView: View {
         ContentUnavailableView {
             Label("この条件の未確認写真は、\nすべて見ました", systemImage: "rectangle.stack.badge.checkmark")
         } description: { Text("表示する写真を変更すると、別の候補を確認できます。") } actions: {
-            if canUndoLastAction {
-                Button("直前の操作を戻す") { undoLastAction() }
-            }
             if !session.items.isEmpty {
                 Button("今回の\(session.items.count)枚を確認") {
                     showingSessionReview = true
                 }
                 .buttonStyle(.borderedProminent)
+
+                Button("表示する写真を変更") {
+                    showingFilters = true
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button("表示する写真を変更") {
+                    showingFilters = true
+                }
+                .buttonStyle(.borderedProminent)
             }
-            Button("表示する写真を変更") { showingFilters = true }.buttonStyle(.borderedProminent)
             if !resettableKeptIdentifiers.isEmpty {
                 Button("キープ済み写真をもう一度表示") {
                     showingKeptResetConfirmation = true
