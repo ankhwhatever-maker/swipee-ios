@@ -80,7 +80,7 @@ struct OrganizeView: View {
     @ViewBuilder private var content: some View {
         switch library.authorizationStatus {
         case .notDetermined: ProgressView("写真へのアクセスを確認しています")
-        case .denied, .restricted: permissionDenied
+        case .denied, .restricted: PhotoAccessRequiredView()
         default:
             if library.isLoading { ProgressView() }
             else if session.isComplete { sessionReadyState }
@@ -200,16 +200,6 @@ struct OrganizeView: View {
     private var sessionReadyState: some View {
         ReviewBatchReadyScreen(itemCount: ReviewSessionStore.targetCount) {
             showingSessionReview = true
-        }
-    }
-
-    private var permissionDenied: some View {
-        ContentUnavailableView {
-            Label("写真へのアクセスが必要です", systemImage: "photo.on.rectangle.angled")
-        } description: {
-            Text("設定アプリでSwipeeの写真アクセスを許可してください。")
-        } actions: {
-            Button("設定を開く") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }.buttonStyle(.borderedProminent)
         }
     }
 

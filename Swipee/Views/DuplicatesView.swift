@@ -1,6 +1,5 @@
 import Photos
 import SwiftUI
-import UIKit
 
 struct DuplicatesView: View {
     @EnvironmentObject private var analysis: DuplicateAnalysisService
@@ -60,7 +59,7 @@ struct DuplicatesView: View {
         case .notDetermined:
             ProgressView("写真へのアクセスを確認しています")
         case .denied, .restricted:
-            permissionDenied
+            PhotoAccessRequiredView()
         default:
             if visibleGroups.isEmpty, analysis.isAnalyzing {
                 analysisProgress
@@ -145,21 +144,6 @@ struct DuplicatesView: View {
         } actions: {
             Button("写真を確認") {
                 Task { await analyze() }
-            }
-            .buttonStyle(.borderedProminent)
-        }
-    }
-
-    private var permissionDenied: some View {
-        ContentUnavailableView {
-            Label("写真へのアクセスが必要です", systemImage: "photo.on.rectangle.angled")
-        } description: {
-            Text("設定アプリでSwipeeの写真アクセスを許可してください。")
-        } actions: {
-            Button("設定を開く") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
             }
             .buttonStyle(.borderedProminent)
         }
