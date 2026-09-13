@@ -27,6 +27,9 @@ struct SwipeCardView: View {
     @State private var sharePayload: AssetSharePayload?
     @State private var shareTemporaryDirectory: URL?
     @State private var shareErrorMessage: String?
+    @State private var showingPhotoActions = false
+    @State private var shouldShareAfterActionsDismiss = false
+    @State private var actionConfirmationMessage: String?
     @State private var videoPlayer = AVPlayer()
     @State private var isVideoMuted = true
 
@@ -48,6 +51,22 @@ struct SwipeCardView: View {
             }
             .sheet(item: $sharePayload, onDismiss: cleanupShareFiles) { payload in
                 ActivityShareSheet(items: payload.items)
+            }
+            .sheet(isPresented: $showingPhotoActions, onDismiss: shareAfterActionsDismissIfNeeded) {
+                PhotoActionsSheet(
+                    asset: asset,
+                    isFavorite: isFavorite,
+                    isUpdatingFavorite: isUpdatingFavorite,
+                    onToggleFavorite: toggleFavorite,
+                    onShare: {
+                        shouldShareAfterActionsDismiss = true
+                        showingPhotoActions = false
+                    },
+                    onAlbumAdded: { albumName in
+                        showingPhotoActions = false
+                        showActionConfirmation("「\(albumName)」に追加しました")
+                    }
+                )
             }
             .alert("共有できません", isPresented: Binding(
                 get: { shareErrorMessage != nil },
@@ -114,6 +133,21 @@ struct SwipeCardView: View {
                 }
                 .transition(.opacity)
             }
+
+            if let actionConfirmationMessage {
+                VStack {
+                    Label(actionConfirmationMessage, systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.82), in: Capsule())
+                        .padding(.top, 18)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .allowsHitTesting(false)
+            }
         }
             .contentShape(Rectangle())
             .gesture(dragGesture, including: isInteractive ? .all : .none)
@@ -158,13 +192,13 @@ struct SwipeCardView: View {
                 .padding(.vertical, 7)
                 .accessibilityHidden(true)
 
-            Button { } label: {
+            Button { showingPhotoActions = true } label: {
                 Image(systemName: "sparkles")
                     .font(.system(size: 19, weight: .semibold))
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("詳細と編集")
-            .accessibilityHint("準備中")
+            .accessibilityHint("写真の操作を表示します")
         }
         .foregroundStyle(.white)
         .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
@@ -314,6 +348,26 @@ struct SwipeCardView: View {
             let didComplete = await onToggleFavorite(nextValue)
             if !didComplete { favoriteOverride = !nextValue }
             isUpdatingFavorite = false
+        }
+    }
+
+    private func shareAfterActionsDismissIfNeeded() {
+        guard shouldShareAfterActionsDismiss else { return }
+        shouldShareAfterActionsDismiss = false
+        Task { @MainActor in
+            await Task.yield()
+            prepareShare()
+        }
+    }
+
+    private func showActionConfirmation(_ message: String) {
+        actionConfirmationMessage = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard actionConfirmationMessage == message else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                actionConfirmationMessage = nil
+            }
         }
     }
 
