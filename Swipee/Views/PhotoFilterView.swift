@@ -63,7 +63,7 @@ struct PhotoFilterView: View {
             } header: {
                 Text("確認済みの写真")
             } footer: {
-                Text("整理でキープした写真と、確認済みにした重複候補をもう一度表示します。削除予定・削除済みの写真には影響しません。")
+                Text("整理済みの写真と重複候補を、もう一度表示します。")
             }
         }
         .navigationTitle("表示する写真")
@@ -91,7 +91,7 @@ struct PhotoFilterView: View {
                 duplicateReviewed.clear()
             }
         } message: {
-            Text("整理でキープした写真と、確認済みにした重複候補が再表示されます。削除予定・削除済みの写真には影響しません。")
+            Text("整理済みの写真と重複候補を、もう一度表示します。")
         }
     }
 
@@ -130,7 +130,7 @@ struct PhotoFilterView: View {
                 Image(systemName: "heart")
                     .frame(width: 26)
                     .foregroundStyle(.primary)
-                Text("お気に入り")
+                Text("お気に入りを表示する")
                     .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: selection.includesFavorites ? "checkmark.circle.fill" : "circle")
@@ -139,7 +139,7 @@ struct PhotoFilterView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("お気に入りの写真を表示")
+        .accessibilityLabel("お気に入りを表示する")
         .accessibilityValue(selection.includesFavorites ? "選択中" : "未選択")
     }
 
